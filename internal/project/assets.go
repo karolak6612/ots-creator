@@ -89,12 +89,33 @@ func loadAssets(dir string) (*assetState, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := checkSheets(dir, cat); err != nil {
+		return nil, err
+	}
 	pieces := assets.NewPieceMap(cat)
 	f, err := assets.Decode(data, pieces)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", cat.Appearances, err)
 	}
 	return &assetState{dir: dir, catalog: cat, pieces: pieces, file: f}, nil
+}
+
+// checkSheets fails when sprite sheets of the catalog are missing, which
+// would otherwise show as objects without pixels.
+func checkSheets(dir string, cat *assets.Catalog) error {
+	missing, first := 0, ""
+	for _, sh := range cat.Sheets {
+		if _, err := os.Stat(filepath.Join(dir, sh.File)); err != nil {
+			if missing == 0 {
+				first = sh.File
+			}
+			missing++
+		}
+	}
+	if missing > 0 {
+		return fmt.Errorf("%d of %d sprite sheets listed in %s are missing (first: %s)", missing, len(cat.Sheets), assets.CatalogFile, first)
+	}
+	return nil
 }
 
 // sheetBase serves 32x32 pieces of sprite sheets, decoding sheets on

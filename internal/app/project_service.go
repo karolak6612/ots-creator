@@ -52,7 +52,11 @@ type ClientFiles struct {
 // and finds the matching files, signatures, version and OTFI features.
 func (ps *ProjectService) Inspect(path string) (ClientFiles, error) {
 	var cf ClientFiles
-	if dir, err := assets.FindDir(path); err == nil {
+	// A dat or otfi in the chosen folder wins over an assets subfolder
+	// (some clients ship both).
+	_, datErr := findClientFile(path)
+	topDat := datErr == nil && !fileExists(filepath.Join(path, assets.CatalogFile))
+	if dir, err := assets.FindDir(path); err == nil && !topDat {
 		v := project.AssetsVersion(dir)
 		return ClientFiles{Format: project.FormatAssets, DatPath: dir, Detected: &v, Features: client.DefaultFeatures(v.Value)}, nil
 	}
@@ -87,6 +91,9 @@ func (ps *ProjectService) Inspect(path string) (ClientFiles, error) {
 		return cf, err
 	}
 	if cf.SprSignature, err = readSignature(cf.SprPath); err != nil {
+		if split := strings.TrimSuffix(cf.SprPath, ".spr") + "1.spr"; os.IsNotExist(err) && fileExists(split) {
+			return cf, fmt.Errorf("%s is missing; this client splits its sprites into %s, %s, … which is not supported", filepath.Base(cf.SprPath), filepath.Base(split), strings.TrimSuffix(filepath.Base(cf.SprPath), ".spr")+"2.spr")
+		}
 		return cf, err
 	}
 	if v, ok := client.FindBySignatures(cf.DatSignature, cf.SprSignature); ok {

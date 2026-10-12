@@ -12,6 +12,18 @@
 
   const recent = $derived((prefs.settings.recent ?? []).slice(0, 5));
 
+  /** Fills the form with a recent client, so its version and features can be changed before opening. */
+  async function pickRecent(r: Recent) {
+    await inspect(r.datPath);
+    if (!files) return;
+    features = { ...r.features };
+    if (!isAssets && versions.some((v) => keyOf(v) === keyOf(r.version))) {
+      versionKey = keyOf(r.version);
+      error = "";
+    }
+  }
+
+  /** Opens a recent client right away with the version and features it was saved with. */
   function openRecent(r: Recent) {
     if (other) {
       void openOther(r);
@@ -99,7 +111,8 @@
         <div class="t-label">Recent clients</div>
         <div class="recent t-panel">
           {#each recent as r (r.datPath)}
-            <button class="ritem" title={r.datPath} onclick={() => openRecent(r)}>
+            <button class="ritem" title={`${r.datPath}
+Click to choose features, double click to open as before`} onclick={() => pickRecent(r)} ondblclick={() => openRecent(r)}>
               <span class="rver">{r.version.name}</span>
               <span class="rdir">{shortPath(recentDir(r), 56)}</span>
             </button>
@@ -116,14 +129,19 @@
       <div class="paths t-panel">
         <span class="t-label">dat</span><span class="path" title={files.datPath}>{files.datPath}</span>
         <span class="t-label">spr</span><span class="path" title={files.sprPath}>{files.sprPath}</span>
-        {#if files.hasOtfi}<span class="note">Features loaded from .otfi</span>{/if}
+        {#if files.hasOtfi}
+          <span class="note">Features loaded from .otfi</span>
+        {:else}
+          <span class="note dim">No .otfi: the dat and spr do not store these settings, so the defaults of the version are set. Check them below (Transparency is off by default).</span>
+        {/if}
       </div>
       <label class="row">
         <span class="t-label">Version</span>
         <Select grow value={versionKey} options={versions.map((v) => ({ value: keyOf(v), label: v.name }))} onchange={(v) => (versionKey = v)} />
         {#if files.detected}<span class="ok">detected</span>{/if}
       </label>
-      {#if version}<FeaturesEditor bind:features version={version.value} />{/if}
+      <div class="t-label">Features</div>
+      <FeaturesEditor bind:features version={version?.value ?? 0} />
     {/if}
     {#if error}<div class="err">{error}</div>{/if}
   </div>
@@ -190,6 +208,9 @@
   .note {
     grid-column: 1 / -1;
     color: var(--green);
+  }
+  .note.dim {
+    color: var(--text-dim);
   }
   .ok {
     color: var(--green);
