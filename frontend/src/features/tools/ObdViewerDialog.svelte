@@ -1,10 +1,15 @@
 <script lang="ts">
   // Browses OBD files and images of a folder. OBD objects are rendered and
   // can be imported; images are shown as plain pictures, clearly marked as
-  // not being objects, and can be imported as sprites.
+  // not being objects, and can be imported as sprites. Objects can also be
+  // queued and dropped into chosen slots of the client (DropPanel,
+  // queue.svelte.ts).
   import { onMount, tick } from "svelte";
+  import { SvelteMap } from "svelte/reactivity";
   import {
     OBJECT_EXT,
+    CATEGORIES,
+    CATEGORY_LABELS,
     CATEGORY_NAMES,
     Category,
     DialogService,
@@ -19,43 +24,43 @@
     type Thing,
     type ViewerEntry,
   } from "../../lib/api";
-  import { app, run, select, setCategory, toast } from "../../lib/state.svelte";
+  import { app, run, toast } from "../../lib/state.svelte";
   import Dialog from "../../lib/ui/Dialog.svelte";
   import Icon from "../../lib/ui/Icon.svelte";
-  import ThingCanvas from "../../lib/ui/ThingCanvas.svelte";
+  import Preview, { type PreviewSource } from "../Preview.svelte";
   import PanStage from "../../lib/ui/PanStage.svelte";
   import { ZOOM_LEVELS, stepZoom, zoomLabel } from "../../lib/pan.svelte";
+  import { compose } from "../../lib/render/compose";
+  import { contentBox } from "../../lib/render/bounds";
+  import VirtualGrid from "../../lib/ui/VirtualGrid.svelte";
+  import { DEFAULT_COLORS } from "../../lib/render/outfit";
+  import { fileQueue } from "../../lib/queue.svelte";
+  import DropPanel from "./DropPanel.svelte";
 
   const FILTERS = [
     { name: "Objects and images (*.otobj, *.obd, *.png, *.bmp, *.gif, *.jpg)", pattern: "*.otobj;*.obd;*.png;*.bmp;*.gif;*.jpg;*.jpeg" },
     { name: "Object files (*.otobj, *.obd)", pattern: "*.otobj;*.obd" },
     { name: "Images (*.png, *.bmp, *.gif, *.jpg)", pattern: "*.png;*.bmp;*.gif;*.jpg;*.jpeg" },
   ];
-  const DIRECTIONS = [
-    ["arrowN", "North"],
-    ["arrowE", "East"],
-    ["arrowS", "South"],
-    ["arrowW", "West"],
-  ];
 
   let dir = $state("");
   let entries = $state<ViewerEntry[]>([]);
   let current = $state("");
   let list = $state<HTMLDivElement>();
+  let scrollTo = $state<number | null>(null);
   let listing = $state(false);
 
   let file = $state<ObjectFile | null>(null);
   let thing = $state<Thing | null>(null);
   let image = $state<(ImageFile & { url: string }) | null>(null);
   let pixels = $state.raw<Uint8ClampedArray[]>([]);
-  let ready = $state(0);
   let group = $state(0);
-  let direction = $state(2);
   let zoom = $state(3);
   let error = $state("");
 
   const g = $derived(thing?.frameGroups[Math.min(group, thing.frameGroups.length - 1)] ?? null);
-  const isOutfit = $derived(thing?.category === Category.CategoryOutfit);
+  const get = (id: number) => (id > 0 ? pixels[id - 1] : undefined);
+  const source = $derived<PreviewSource | null>(thing && file ? { key: current, thing, get, size: file.spriteSize } : null);
   const index = $derived(entries.findIndex((e) => e.path === current));
   const entry = $derived(entries[index] ?? null);
   const name = $derived(current.replace(/^.*[\\/]/, ""));
@@ -80,6 +85,7 @@
     const folder = path.replace(/[\\/][^\\/]*$/, "");
     if (!samePath(folder, dir)) {
       dir = folder;
+      wanted.length = 0;
       listing = true;
       try {
         entries = (await ViewerService.List(folder)) ?? [];
@@ -92,7 +98,7 @@
     }
     await show(entries.find((e) => samePath(e.path, path))?.path ?? path);
     await tick();
-    list?.focus();
+    list?.querySelector<HTMLElement>(".vgrid")?.focus();
   }
 
   type Loaded =
@@ -102,6 +108,8 @@
   // Recently read files, so browsing back and forth is instant. Neighbours
   // of the shown file are read ahead (slow drives make every read count).
   const CACHE_SIZE = 32;
+  const CELL_W = 64;
+  const CELL_H = 64;
   const cache = new Map<string, Promise<Loaded>>();
 
   function read(path: string): Promise<Loaded> {
@@ -111,7 +119,15 @@
       cache.set(path, hit); // most recent last
       return hit;
     }
-    const p: Promise<Loaded> = OBJECT_EXT.test(path)
+    const p = load(path);
+    p.catch(() => cache.delete(path));
+    cache.set(path, p);
+    while (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value!);
+    return p;
+  }
+
+  function load(path: string): Promise<Loaded> {
+    return OBJECT_EXT.test(path)
       ? ThingService.ReadObject(path).then((f) => {
           if (!f?.thing) throw new Error("empty object file");
           return { kind: "obd", file: f, thing: normalizeThing(f.thing), pixels: (f.sprites ?? []).map((b) => decodeBytes(b as unknown as string)) };
@@ -120,10 +136,37 @@
           if (!img) throw new Error("empty image");
           return { kind: "image", image: { ...img, url: `data:image/png;base64,${img.png}` } };
         });
-    p.catch(() => cache.delete(path));
-    cache.set(path, p);
-    while (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value!);
-    return p;
+  }
+
+  // Thumbnails of the grid, read when their cells show up. The newest
+  // requests go first, so scrolling fast does not wait for skipped cells.
+  // "" marks a file that could not be read.
+  const thumbs = new SvelteMap<string, string>();
+  const wanted: string[] = [];
+  let reading = 0;
+
+  function wantThumb(_node: HTMLElement, path: string) {
+    const want = (p: string) => {
+      if (thumbs.has(p) || wanted.includes(p)) return;
+      wanted.push(p);
+      pump();
+    };
+    want(path);
+    return { update: want };
+  }
+
+  function pump() {
+    while (reading < 3 && wanted.length) {
+      const path = wanted.pop()!;
+      reading++;
+      (cache.get(path) ?? load(path))
+        .then((r) => thumbs.set(path, r.kind === "image" ? r.image.url : thumbnail(r.thing, r.pixels, r.file.spriteSize)))
+        .catch(() => thumbs.set(path, ""))
+        .finally(() => {
+          reading--;
+          pump();
+        });
+    }
   }
 
   function prefetch() {
@@ -156,8 +199,8 @@
         thing = r.thing;
         image = null;
         group = 0;
-        direction = 2;
-        ready++;
+        dropCategory = r.thing.category;
+        if (!thumbs.get(path)) thumbs.set(path, thumbnail(r.thing, r.pixels, r.file.spriteSize));
       }
     } catch (e) {
       if (current !== path) return;
@@ -171,33 +214,63 @@
         loading = false;
       }
     }
-    list?.querySelector(".entry.on")?.scrollIntoView({ block: "nearest" });
+    scrollTo = null;
+    await tick();
+    scrollTo = index;
     prefetch();
   }
 
-  function onkeydown(e: KeyboardEvent) {
-    const step: Record<string, number> = { ArrowUp: -1, ArrowDown: 1, PageUp: -10, PageDown: 10 };
+  function onkeydown(e: KeyboardEvent, columns: number) {
+    const rows = Math.max(1, Math.floor((list?.clientHeight ?? 0) / CELL_H));
+    const step: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -columns, ArrowDown: columns, PageUp: -columns * rows, PageDown: columns * rows };
     if (!(e.key in step) || !entries.length) return;
     e.preventDefault();
     const i = Math.min(Math.max((index < 0 ? 0 : index) + step[e.key], 0), entries.length - 1);
     void show(entries[i].path);
   }
 
-  const get = (id: number) => (id > 0 ? pixels[id - 1] : undefined);
   const kb = (n: number) => (n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`);
 
-  async function importObject() {
-    if (!file || !app.open) return;
-    const res = await run("Importing", () => ThingService.ImportObjects([file!.path], 0));
-    const r = res?.[0];
-    if (!r) return;
-    if (r.error) {
-      toast(r.error, "error");
+  // Queue of object files to drop into chosen ids of the client.
+  let dropCategory = $state<Category>(app.category);
+  const queueCounts = $derived(fileQueue.counts());
+  const queuedPaths = $derived(new Set(app.fileQueue.map((q) => q.key)));
+
+  /** First frame of a thing, cropped to its visible pixels, as a PNG data URL. */
+  function thumbnail(t: Thing, px: Uint8ClampedArray[], size: number): string {
+    const g = t.frameGroups[0];
+    const outfit = t.category === Category.CategoryOutfit;
+    const img = compose(g, g.sprites, size, { pos: { layer: 0, x: outfit ? Math.min(2, g.patternX - 1) : 0, y: 0, z: 0, frame: 0 }, colors: outfit ? DEFAULT_COLORS : null }, (id) => (id > 0 ? px[id - 1] : undefined));
+    const box = contentBox(img) ?? { x: 0, y: 0, w: img.width, h: img.height };
+    const full = document.createElement("canvas");
+    full.width = img.width;
+    full.height = img.height;
+    full.getContext("2d")!.putImageData(img, 0, 0);
+    const c = document.createElement("canvas");
+    c.width = box.w;
+    c.height = box.h;
+    c.getContext("2d")!.drawImage(full, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
+    return c.toDataURL();
+  }
+
+  /** Queues an object file, or takes it out of the queue. */
+  async function toggleQueue(path: string) {
+    const q = app.fileQueue.find((x) => x.key === path);
+    if (q) {
+      fileQueue.dequeue(q.category, [path]);
       return;
     }
-    toast(`Imported as ${CATEGORY_NAMES[r.category]} #${r.id}.`, "success");
-    if (r.category !== app.category) await setCategory(r.category);
-    await select(r.id);
+    let r: Loaded;
+    try {
+      r = await read(path);
+    } catch (e) {
+      toast(errorMessage(e), "error");
+      return;
+    }
+    if (r.kind !== "obd") return;
+    const thumb = thumbs.get(path) || thumbnail(r.thing, r.pixels, r.file.spriteSize);
+    fileQueue.enqueue(r.thing.category, [{ key: path, label: path.replace(/^.*[\\/]/, ""), thumb }]);
+    dropCategory = r.thing.category;
   }
 
   async function importImage() {
@@ -210,46 +283,79 @@
   }
 </script>
 
-<Dialog title="Object Viewer" width={880} onclose={() => (app.dialog = null)}>
+<Dialog title="Object Viewer" width={1000} onclose={() => (app.dialog = null)}>
   <div class="layout">
     <div class="files col">
-      <div class="t-label folder" title={dir}>{dir || "No folder"}</div>
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <div class="list t-panel" bind:this={list} tabindex="0" role="listbox" aria-label="Files" {onkeydown}>
-        {#each entries as e (e.path)}
-          <button class="entry" class:on={e.path === current} class:busy={loading && e.path === current} role="option" aria-selected={e.path === current} title={e.name} onclick={() => show(e.path)}>
-            <span class="kind {e.kind}">{e.kind === "obd" ? (/\.otobj$/i.test(e.name) ? "OTOBJ" : "OBD") : "IMG"}</span>
-            <span class="fname">{e.name}</span>
-          </button>
+      <button class="t-label folder" title={dir ? `${dir}
+Click to open another file` : "Open a file"} onclick={browse}>{dir || "No folder"}</button>
+      <div class="list t-panel" bind:this={list}>
+        {#if entries.length}
+          <VirtualGrid count={entries.length} cellWidth={CELL_W} cellHeight={CELL_H} gap={2} {scrollTo} {onkeydown}>
+            {#snippet cell(i)}
+              {@const e = entries[i]}
+              {@const src = thumbs.get(e.path)}
+              <button
+                class="entry"
+                class:on={e.path === current}
+                class:busy={loading && e.path === current}
+                class:queued={queuedPaths.has(e.path)}
+                title={e.kind === "obd" ? `${e.name}${queuedPaths.has(e.path) ? " (queued)" : ""}\nDouble click queues it` : `${e.name}\nImage, not an object`}
+                onclick={() => show(e.path)}
+                ondblclick={() => e.kind === "obd" && toggleQueue(e.path)}
+                use:wantThumb={e.path}
+              >
+                <span class="thumb">
+                  {#if src}
+                    <img class="pixel" {src} alt="" draggable="false" />
+                  {:else if src === ""}
+                    <Icon name="close" />
+                  {:else}
+                    <span class="spinner"></span>
+                  {/if}
+                  {#if e.kind === "image"}<span class="badge img">IMG</span>{/if}
+                  {#if queuedPaths.has(e.path)}<span class="badge q">Q</span>{/if}
+                </span>
+                <span class="fname">{e.name.replace(/\.[^.]+$/, "")}</span>
+              </button>
+            {/snippet}
+          </VirtualGrid>
+        {:else if listing}
+          <div class="t-label none"><span class="spinner"></span>Reading folder…</div>
+        {:else if dir}
+          <button class="t-label none open" onclick={browse}>No object files or images here.<br />Click to open another file.</button>
         {:else}
-          {#if listing}
-            <div class="t-label none"><span class="spinner"></span>Reading folder…</div>
-          {:else if dir}
-            <div class="t-label none">No object files or images here.</div>
-          {:else}
-            <div class="t-label none">Choose a file with Open… to list its folder.</div>
-          {/if}
-        {/each}
+          <button class="t-label none open" onclick={browse}><Icon name="open" /><br />Click to open a file and list its folder.</button>
+        {/if}
       </div>
-      <div class="t-label small">{counts.obd} object{counts.obd === 1 ? "" : "s"} · {counts.image} image{counts.image === 1 ? "" : "s"} · ↑↓ to browse</div>
+      <div class="t-label">{counts.obd} object{counts.obd === 1 ? "" : "s"} · {counts.image} image{counts.image === 1 ? "" : "s"} · arrows to browse</div>
     </div>
 
-    <div class="stage checker" class:dim={loading}>
+    <div class="view col" class:dim={loading}>
       {#if loading}
         <div class="loader t-panel" role="status"><span class="spinner"></span>Loading {name}…</div>
       {/if}
-      {#if thing || image}
-        <PanStage {zoom} onzoom={(d) => (zoom = stepZoom(zoom, d))} resetKey={current}>
-          {#if thing}
-            <ThingCanvas {thing} {get} size={file?.spriteSize ?? 32} {ready} {group} {direction} />
-          {:else if image}
-            <img class="pixel" src={image.url} alt={name} />
+      {#if source}
+        <Preview {source} bind:group />
+      {:else}
+        <div class="stage checker">
+          {#if image}
+            <PanStage {zoom} onzoom={(d) => (zoom = stepZoom(zoom, d))} resetKey={current}>
+              <img class="pixel" src={image.url} alt={name} />
+            </PanStage>
+          {:else if error}
+            <span class="err">{error}</span>
+          {:else if !current && !loading}
+            <span class="t-label">Open an .otobj, .obd or image file to view it.</span>
           {/if}
-        </PanStage>
-      {:else if error}
-        <span class="err">{error}</span>
-      {:else if !current && !loading}
-        <span class="t-label">Open an .otobj, .obd or image file to view it.</span>
+        </div>
+        {#if image}
+          <div class="row tools">
+            <span class="grow"></span>
+            <button class="t-icon-btn" title="Zoom out (Ctrl+wheel)" disabled={zoom <= ZOOM_LEVELS[0]} onclick={() => (zoom = stepZoom(zoom, -1))}><Icon name="zoomout" /></button>
+            <span class="t-label">{zoomLabel(zoom)}</span>
+            <button class="t-icon-btn" title="Zoom in (Ctrl+wheel)" disabled={zoom >= ZOOM_LEVELS[ZOOM_LEVELS.length - 1]} onclick={() => (zoom = stepZoom(zoom, 1))}><Icon name="zoomin" /></button>
+          </div>
+        {/if}
       {/if}
     </div>
 
@@ -258,46 +364,33 @@
       {#if image}
         <div class="notice">
           <Icon name="info" />
-          <span>Not an object file. This is a plain {image.format.toUpperCase()} image; it can only be imported as sprites.</span>
-        </div>
-        <div class="info t-panel">
-          <span class="t-label">Type</span><span>{image.format.toUpperCase()} image</span>
-          <span class="t-label">Size</span><span>{image.width}×{image.height} px</span>
-          {#if entry}<span class="t-label">File</span><span>{kb(entry.size)}</span>{/if}
+          <span>Plain {image.format.toUpperCase()} image, {image.width}×{image.height} px{entry ? `, ${kb(entry.size)}` : ""}. Not an object; it can only be imported as sprites.</span>
         </div>
       {:else if thing && file && g}
         <div class="info t-panel">
-          <span class="t-label">Category</span><span>{CATEGORY_NAMES[thing.category]}</span>
+          <span class="t-label">Type</span><span>{CATEGORY_NAMES[thing.category]}</span>
           <span class="t-label">Format</span><span>{file.format === "otobj" ? "OTOBJ" : "OBD"} {file.version}</span>
           <span class="t-label">Client</span><span>{(file.clientVersion / 100).toFixed(2)}</span>
           <span class="t-label">Size</span><span>{g.width}×{g.height} ({file.spriteSize}px)</span>
           <span class="t-label">Layers</span><span>{g.layers}</span>
-          <span class="t-label">Patterns</span><span>{g.patternX}×{g.patternY}×{g.patternZ}</span>
+          <span class="t-label">Pattern</span><span>{g.patternX}×{g.patternY}×{g.patternZ}</span>
           <span class="t-label">Frames</span><span>{g.frames}</span>
           <span class="t-label">Sprites</span><span>{pixels.length}</span>
-          {#if entry}<span class="t-label">File</span><span>{kb(entry.size)}</span>{/if}
-        </div>
-        {#if thing.frameGroups.length > 1}
-          <div class="t-tabs">
-            <button class="t-tab" class:on={group === 0} onclick={() => (group = 0)}>Idle</button>
-            <button class="t-tab" class:on={group === 1} onclick={() => (group = 1)}>Walking</button>
-          </div>
-        {/if}
-        {#if isOutfit && g.patternX > 1}
-          <div class="row dirs">
-            {#each DIRECTIONS.slice(0, g.patternX) as [icon, label], i}
-              <button class="t-icon-btn" class:on={direction === i} title={label} onclick={() => (direction = i)}><Icon name={icon} /></button>
-            {/each}
-          </div>
-        {/if}
-      {/if}
-      {#if thing || image}
-        <div class="row">
-          <button class="t-icon-btn" title="Zoom out (Ctrl+wheel)" disabled={zoom <= ZOOM_LEVELS[0]} onclick={() => (zoom = stepZoom(zoom, -1))}><Icon name="zoomout" /></button>
-          <span class="t-label">{zoomLabel(zoom)}</span>
-          <button class="t-icon-btn" title="Zoom in (Ctrl+wheel)" disabled={zoom >= ZOOM_LEVELS[ZOOM_LEVELS.length - 1]} onclick={() => (zoom = stepZoom(zoom, 1))}><Icon name="zoomin" /></button>
         </div>
       {/if}
+      <div class="t-tabs cats">
+        {#each CATEGORIES as c}
+          {@const n = queueCounts.get(c) ?? 0}
+          <button class="t-tab" class:on={dropCategory === c} title={CATEGORY_LABELS[c]} onclick={() => (dropCategory = c)}>{CATEGORY_LABELS[c]}{n ? ` (${n})` : ""}</button>
+        {/each}
+      </div>
+      <div class="side-panel">
+        {#if app.open}
+          <DropPanel queue={fileQueue} category={dropCategory} onshow={(path: string) => open(path)} />
+        {:else}
+          <span class="t-label">Open a client to drop objects into it.</span>
+        {/if}
+      </div>
     </div>
   </div>
   {#snippet footer()}
@@ -306,7 +399,9 @@
     {#if image}
       <button class="t-btn primary" disabled={!app.open || !!app.busy} title={app.open ? "" : "Open a client to import"} onclick={importImage}>Import as sprites</button>
     {:else}
-      <button class="t-btn primary" disabled={!file || !app.open || !!app.busy} title={app.open ? "" : "Open a client to import"} onclick={importObject}>Import object</button>
+      <button class="t-btn primary" disabled={!file} title="Queue the object, then click a slot to drop it there (double click a file queues it too)" onclick={() => file && toggleQueue(current)}
+        >{queuedPaths.has(current) ? "Unqueue" : "Queue"}</button
+      >
     {/if}
     <button class="t-btn" onclick={() => (app.dialog = null)}>Close</button>
   {/snippet}
@@ -315,11 +410,11 @@
 <style>
   .layout {
     display: flex;
-    gap: 10px;
-    height: 400px;
+    gap: 8px;
+    height: 500px;
   }
   .files {
-    width: 220px;
+    width: 232px;
     flex: none;
     gap: 4px;
     min-height: 0;
@@ -334,71 +429,127 @@
   .list {
     flex: 1;
     min-height: 0;
-    overflow-y: auto;
-    padding: 2px;
-    outline: none;
+    display: flex;
+    padding: 3px;
   }
-  .list:focus-visible {
+  .list :global(.vgrid:focus-visible) {
     box-shadow: 0 0 0 1px #6a6a6a;
   }
   .entry {
     width: 100%;
+    height: 100%;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 6px;
-    padding: 2px 4px;
+    gap: 1px;
+    padding: 2px;
     border: 1px solid transparent;
     background: none;
     font: inherit;
-    color: var(--text);
-    text-align: left;
+    color: var(--text-dim);
     cursor: pointer;
+  }
+  .entry :global(*) {
+    pointer-events: none;
   }
   .entry:hover {
     background: rgba(255, 255, 255, 0.05);
+  }
+  .entry.queued {
+    border-color: rgba(232, 196, 106, 0.5);
   }
   .entry.on {
     background: var(--select);
     border-color: #b6b6b6;
     color: #fff;
   }
-  .kind {
-    flex: none;
-    width: 26px;
+  .thumb {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    display: grid;
+    place-items: center;
+  }
+  .thumb img {
+    max-width: 44px;
+    max-height: 44px;
+    object-fit: contain;
+  }
+  .badge {
+    position: absolute;
+    top: 0;
+    padding: 0 2px;
     font: var(--fs-small) / 10px var(--font-small);
-    text-align: center;
-    padding: 1px 0;
     border: 1px solid currentColor;
+    background: rgba(0, 0, 0, 0.6);
   }
-  .kind.obd {
-    color: var(--green);
-  }
-  .kind.image {
+  .badge.img {
+    left: 0;
     color: var(--gold);
   }
+  .badge.q {
+    right: 0;
+    color: var(--green);
+  }
   .fname {
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font: var(--fs-small) / 12px var(--font-small);
   }
   .none {
+    margin: auto;
     padding: 8px;
   }
-  .small {
-    font: var(--fs-small) / 10px var(--font-small);
+  .folder {
+    border: none;
+    background: none;
+    font: inherit;
+    padding: 0;
+    cursor: pointer;
+  }
+  .folder:hover {
+    color: var(--text-bright);
+  }
+  /* The empty list is one big open button. */
+  .none.open {
+    margin: 0;
+    flex: 1;
+    border: 1px dashed transparent;
+    background: none;
+    font: inherit;
+    text-align: center;
+    cursor: pointer;
+  }
+  .none.open:hover {
+    color: var(--text-bright);
+    border-color: #6a6a6a;
+  }
+  .view {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    gap: 4px;
   }
   .stage {
     position: relative;
     flex: 1;
-    min-width: 0;
+    min-height: 0;
     display: grid;
     place-items: center;
     overflow: hidden;
     border: 1px solid #1a1a1a;
   }
   /* Previous content stays visible but faded while the next file loads. */
-  .stage.dim > :global(:not(.loader)) {
+  .view.dim > :global(:not(.loader)) {
     opacity: 0.35;
+  }
+  .tools {
+    gap: 6px;
+    min-height: 22px;
   }
   .loader {
     position: absolute;
@@ -421,22 +572,21 @@
     display: inline-block;
     width: 12px;
     height: 12px;
-    margin-right: 6px;
     border: 2px solid rgba(232, 196, 106, 0.25);
     border-top-color: var(--gold);
     border-radius: 50%;
     animation: spin 0.7s linear infinite;
-    vertical-align: -2px;
   }
-  .loader .spinner {
-    margin-right: 0;
+  .none .spinner {
+    margin-right: 6px;
+    vertical-align: -2px;
   }
   @keyframes spin {
     to {
       transform: rotate(360deg);
     }
   }
-  .entry.busy .kind {
+  .entry.busy .thumb {
     animation: pulse 0.8s ease-in-out infinite alternate;
   }
   @keyframes pulse {
@@ -445,9 +595,10 @@
     }
   }
   .side {
-    width: 190px;
+    width: 250px;
     flex: none;
-    gap: 6px;
+    gap: 4px;
+    min-height: 0;
   }
   .name {
     color: var(--text-bright);
@@ -469,16 +620,35 @@
   }
   .info {
     display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 2px 8px;
-    padding: 6px 8px;
+    grid-template-columns: auto 1fr auto 1fr;
+    gap: 1px 6px;
+    padding: 4px 6px;
+    font: var(--fs-small) / 14px var(--font-small);
   }
-  .dirs {
-    gap: 2px;
+  .info > span:nth-child(even) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .t-icon-btn.on {
-    color: var(--text-bright);
-    filter: brightness(1.3);
+  .cats {
+    margin-top: 4px;
+  }
+  .cats .t-tab {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding-inline: 2px;
+  }
+  .side-panel {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+  }
+  .side-panel > :global(.drop) {
+    position: absolute;
+    inset: 0;
   }
   .err {
     color: #ff9c9c;

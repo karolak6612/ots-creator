@@ -3,7 +3,7 @@
   // columns pattern Z × X × layers, rows frames × pattern Y). Each tile is a
   // drop target; dropping several sprites fills the following slots.
   import type { FrameGroup } from "../lib/api";
-  import { compose } from "../lib/render/compose";
+  import { compose, type PixelSource } from "../lib/render/compose";
   import { sheetCellPos, sheetGrid, spriteIndex, tileOffset, type TexturePos } from "../lib/render/layout";
   import { spriteCache } from "../lib/render/sprites";
   import { dragsMany, droppedSprites } from "../lib/dragsprites";
@@ -29,6 +29,8 @@
     manualZoom = null,
     fitZoom = $bindable(1),
     onwheelzoom,
+    get = (id) => spriteCache.get(id)?.pixels,
+    readonly = false,
   }: {
     g: FrameGroup;
     size: number;
@@ -54,6 +56,10 @@
     fitZoom?: number;
     /** Ctrl+wheel: +1 or -1. */
     onwheelzoom?: (delta: number) => void;
+    /** Pixels of the sprites; the open client's by default. */
+    get?: PixelSource;
+    /** No sprites can be dropped. */
+    readonly?: boolean;
   } = $props();
 
   let canvas = $state<HTMLCanvasElement>();
@@ -135,7 +141,6 @@
     canvas.height = Math.max(1, sheetH);
     const ctx = canvas.getContext("2d")!;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const get = (id: number) => spriteCache.get(id)?.pixels;
     for (let r = 0; r < grid.rows; r++)
       for (let c = 0; c < grid.columns; c++) {
         const img = compose(g, g.sprites, size, { pos: sheetCellPos(g, c, r), colors }, get);
@@ -144,6 +149,7 @@
   });
 
   function dragOver(e: DragEvent, slot: number) {
+    if (readonly) return;
     e.preventDefault();
     dropSlot = slot;
     // The ids are only readable on drop; a multi drag is the selection.

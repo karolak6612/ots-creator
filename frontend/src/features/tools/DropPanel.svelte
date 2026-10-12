@@ -1,18 +1,31 @@
 <script lang="ts">
-  // Right side of the compare window: the queue of objects of B and the
-  // slots of A. A click on a slot drops the next queued object there.
+  // Queue panel of the compare window and the object viewer: the queued
+  // objects and the slots of A. A click on a slot drops the next queued
+  // object there.
   import { CATEGORY_NAMES, errorMessage, minId, res, ThingService, type Category } from "../../lib/api";
   import { openContextMenu, type MenuEntry } from "../../lib/menu.svelte";
-  import { clearQueue, dequeue, drop, queued, toFront } from "../../lib/queue.svelte";
-  import { app, otherVersions, toast, versions } from "../../lib/state.svelte";
+  import type { DropQueue, QueueItem } from "../../lib/queue.svelte";
+  import { app, toast, versions } from "../../lib/state.svelte";
   import Icon from "../../lib/ui/Icon.svelte";
   import VirtualGrid from "../../lib/ui/VirtualGrid.svelte";
   import { loading as imgLoading } from "../../lib/ui/loading";
 
-  let { category, onshow }: { category: Category; onshow: (id: number) => void } = $props();
+  let {
+    queue: q,
+    category,
+    onshow,
+    onshowSlot,
+  }: {
+    queue: DropQueue<any>;
+    category: Category;
+    /** Shows a queued object in the window's list. */
+    onshow: (key: any) => void;
+    /** Shows an object of A in the window's list. */
+    onshowSlot?: (id: number) => void;
+  } = $props();
 
-  const queue = $derived(queued(category));
-  const next = $derived(queue[0] ?? null);
+  const queue = $derived(q.list(category));
+  const next = $derived<QueueItem | null>(queue[0] ?? null);
 
   // Slots of A: every id and one past the end (dropping there appends).
   let emptyOnly = $state(false);
@@ -50,7 +63,7 @@
   let recent = $state<Set<number>>(new Set());
   let timer: ReturnType<typeof setTimeout> | undefined;
   async function dropAt(at: number, n = 1, free = false) {
-    const got = await drop(category, at, n, free);
+    const got = await q.drop(category, at, n, free);
     if (!got.length) return;
     recent = new Set(got);
     clearTimeout(timer);
@@ -63,22 +76,22 @@
     const none = () => !queue.length || !!app.busy;
     const at = id === end ? 0 : id;
     const items: MenuEntry[] = [
-      { label: next !== null ? `Drop #${next} here` : "Drop next here", action: () => dropAt(at), disabled: none },
+      { label: next !== null ? `Drop ${q.label(next)} here` : "Drop next here", action: () => dropAt(at), disabled: none },
       { label: `Drop all ${queue.length} from here (free ids)`, action: () => dropAt(at === 0 ? end : at, 0, true), disabled: none },
       { label: `Drop all ${queue.length} from here (in a row)`, action: () => dropAt(at === 0 ? end : at, 0, false), disabled: none },
       { label: `Drop all ${queue.length} at the end`, action: () => dropAt(0, 0), disabled: none },
     ];
-    if (id !== end) items.push("-", { label: "Show in list", action: () => onshow(id) });
+    if (id !== end && onshowSlot) items.push("-", { label: "Show in list", action: () => onshowSlot(id) });
     openContextMenu(e, items);
   }
 
-  function queueMenu(e: MouseEvent, id: number) {
+  function queueMenu(e: MouseEvent, key: number | string) {
     openContextMenu(e, [
-      { label: "Drop next", action: () => toFront(category, id) },
-      { label: "Remove from queue", action: () => dequeue(category, [id]) },
-      { label: "Show in list", action: () => onshow(id) },
+      { label: "Drop next", action: () => q.toFront(category, key) },
+      { label: "Remove from queue", action: () => q.dequeue(category, [key]) },
+      { label: "Show in list", action: () => onshow(key) },
       "-",
-      { label: "Clear queue", action: () => clearQueue(category) },
+      { label: "Clear queue", action: () => q.clear(category) },
     ]);
   }
 </script>
@@ -86,19 +99,20 @@
 <div class="drop col">
   <div class="row head">
     <strong>Queue</strong>
-    <span class="t-label">{queue.length ? `${queue.length} ${CATEGORY_NAMES[category]}(s) from B` : "empty"}</span>
+    <span class="t-label">{queue.length ? `${queue.length} ${CATEGORY_NAMES[category]}(s) ${q.src.from}` : "empty"}</span>
     <span class="grow"></span>
-    <button class="t-icon-btn" title="Clear the queue" disabled={!queue.length} onclick={() => clearQueue(category)}><Icon name="close" /></button>
+    <button class="t-icon-btn" title="Clear the queue" disabled={!queue.length} onclick={() => q.clear(category)}><Icon name="close" /></button>
   </div>
   <div class="queue t-panel">
     {#if !queue.length}
-      <div class="t-label hint">Double click objects of B to queue them.</div>
+      <div class="t-label hint">{q.src.hint}</div>
     {:else}
-      {#each queue as id, i (id)}
-        {@const src = res.otherThumb(category, id, otherVersions.thing(category, id))}
-        <button class="q" class:next={i === 0} title={i === 0 ? `#${id} drops next (right click for more)` : `#${id}: click to drop next`} onclick={() => toFront(category, id)} oncontextmenu={(e) => queueMenu(e, id)}>
+      {#each queue as it, i (it.key)}
+        {@const src = q.thumb(it)}
+        {@const label = q.label(it)}
+        <button class="q" class:next={i === 0} title={i === 0 ? `${label} drops next (right click for more)` : `${label}: click to drop next`} onclick={() => q.toFront(category, it.key)} oncontextmenu={(e) => queueMenu(e, it.key)}>
           <span class="t-slot"><img class="pixel" {src} alt="" decoding="async" draggable="false" use:imgLoading={src} /></span>
-          <span class="id">{id}</span>
+          <span class="id">{typeof it.key === "number" ? it.key : label}</span>
         </button>
       {/each}
     {/if}
@@ -129,7 +143,7 @@
         >
           <span class="t-slot">
             {#if next !== null && hovered === id}
-              {@const src = res.otherThumb(category, next, otherVersions.thing(category, next))}
+              {@const src = q.thumb(next)}
               <img class="pixel ghost" {src} alt="" decoding="async" draggable="false" />
             {:else if isEnd}
               <Icon name="plus" />
@@ -223,6 +237,10 @@
     object-fit: contain;
   }
   .id {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font: var(--fs-small) / 12px var(--font-small);
     text-shadow: 1px 1px 0 #000;
   }

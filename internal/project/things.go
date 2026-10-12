@@ -259,6 +259,61 @@ func (p *Project) ImportOBD(d *obd.Data, replaceID uint32) (uint32, error) {
 	return t.ID, nil
 }
 
+// ImportOBDsTo imports OBD files of category c, ds[i] to targets[i],
+// replacing the things there. Targets past the end of the category extend
+// it, filling any gap with empty things. The whole import is one undoable
+// edit.
+func (p *Project) ImportOBDsTo(c thing.Category, ds []*obd.Data, targets []uint32) ([]uint32, error) {
+	if len(targets) != len(ds) {
+		return nil, fmt.Errorf("%d target ids for %d %s(s)", len(targets), len(ds), c)
+	}
+	seen := map[uint32]bool{}
+	for _, id := range targets {
+		if id < c.MinID() {
+			return nil, fmt.Errorf("%s id %d is below %d", c, id, c.MinID())
+		}
+		if seen[id] {
+			return nil, fmt.Errorf("target id %d is used twice", id)
+		}
+		seen[id] = true
+	}
+	things := make([]*thing.Thing, len(ds))
+	for i, d := range ds {
+		if d.SpriteSize != p.features.SpriteSize {
+			return nil, fmt.Errorf("object uses %dpx sprites, client uses %dpx", d.SpriteSize, p.features.SpriteSize)
+		}
+		t := d.Thing.Clone()
+		t.Extra = nil
+		if t.Category != c {
+			return nil, fmt.Errorf("object is a %s, not a %s", t.Category, c)
+		}
+		if err := t.Validate(); err != nil {
+			return nil, err
+		}
+		things[i] = t
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	r := p.record(fmt.Sprintf("Import %d %s(s)", len(things), c))
+	for i, t := range things {
+		for gi, g := range t.FrameGroups {
+			pixels := make([][]byte, len(ds[i].Sprites[gi]))
+			for j, s := range ds[i].Sprites[gi] {
+				pixels[j] = s.Pixels
+			}
+			copy(g.Sprites, p.addSpritesDedup(r, pixels))
+		}
+		t.ID = targets[i]
+		for id := p.things.MaxID(c) + 1; id < t.ID; id++ {
+			r.setThing(c, id, thing.New(id, c))
+		}
+		keepExtra(t, p.things.Get(c, t.ID))
+		r.setThing(c, t.ID, t)
+	}
+	r.commit()
+	return targets, nil
+}
+
 // SetGroupPixels replaces every sprite of one frame group with new pixels
 // (indexed by sprite slot), for example from an imported sprite sheet.
 func (p *Project) SetGroupPixels(c thing.Category, id uint32, group int, pixels [][]byte) error {

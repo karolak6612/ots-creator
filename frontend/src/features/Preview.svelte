@@ -2,14 +2,25 @@
   // The chosen mount and view survive switching objects.
   let savedMountId = 0;
   let savedSheetView = false;
+
+  /** Something other than the selected object of the client, shown read-only. */
+  export interface PreviewSource {
+    /** Changes when another object is shown, which resets the view. */
+    key: string;
+    thing: Thing;
+    get: PixelSource;
+    size: number;
+    /** The source stores frame durations; guessed from the thing when not given. */
+    improved?: boolean;
+  }
 </script>
 
 <script lang="ts">
   import { untrack } from "svelte";
   import { Category, encodeBytes, errorMessage, Format, normalizeThing, ThingService, type Thing } from "../lib/api";
-  import { Animator, previewDurations } from "../lib/render/animator";
+  import { Animator, guessImproved, previewDurations } from "../lib/render/animator";
   import { PREVIEW_DROP } from "../lib/commands";
-  import { compose, stackBottomRight } from "../lib/render/compose";
+  import { compose, stackBottomRight, type PixelSource } from "../lib/render/compose";
   import { clampPos, fillSlots, textureSlots, type TexturePos } from "../lib/render/layout";
   import { droppedSprites } from "../lib/dragsprites";
   import SheetEditor from "./SheetEditor.svelte";
@@ -23,7 +34,8 @@
   import Icon from "../lib/ui/Icon.svelte";
   import ColorPicker from "./ColorPicker.svelte";
 
-  let { group = $bindable(0) }: { group?: number } = $props();
+  let { group = $bindable(0), source = null }: { group?: number; source?: PreviewSource | null } = $props();
+  const readonly = $derived(!!source);
 
   let canvas = $state<HTMLCanvasElement>();
   // Zoom follows the window (largest whole zoom that fits) until the user
@@ -51,10 +63,10 @@
   let hoverSlot = $state<number | null>(null);
   let dropSlot = $state<number | null>(null);
 
-  const thing = $derived(app.draft);
+  const thing = $derived(source ? source.thing : app.draft);
   const g = $derived(thing?.frameGroups[Math.min(group, (thing?.frameGroups.length ?? 1) - 1)] ?? null);
   const isOutfit = $derived(thing?.category === Category.CategoryOutfit);
-  const size = $derived(loaded >= 0 ? spriteCache.size : 32);
+  const size = $derived(source ? source.size : loaded >= 0 ? spriteCache.size : 32);
 
   const MAX_ZOOM = 16;
   const fitZoom = $derived.by(() => {
@@ -100,7 +112,7 @@
   let committed = false;
   let stroke: { id: number; before: ImageData; last: [number, number] } | null = null;
   const groupIndex = () => Math.min(group, (thing?.frameGroups.length ?? 1) - 1);
-  const getSprite = (id: number) => spriteCache.get(id)?.pixels;
+  const getSprite: PixelSource = (id) => (source ? source.get(id) : spriteCache.get(id)?.pixels);
 
   function toggleEditing() {
     editing = !editing;
@@ -187,7 +199,7 @@
   // Reset view state when another thing is selected.
   let lastKey = "";
   $effect(() => {
-    const key = `${app.category}:${thing?.id}`;
+    const key = source ? source.key : `${app.category}:${thing?.id}`;
     if (key === lastKey) return;
     lastKey = key;
     // Keep the idle/walking tab when the new thing has that group too.
@@ -212,7 +224,7 @@
     savedMountId = mountId;
     const id = mountId;
     void app.rev;
-    if (!isOutfit || !mount || (g?.patternZ ?? 1) < 2 || id < 1) {
+    if (readonly || !isOutfit || !mount || (g?.patternZ ?? 1) < 2 || id < 1) {
       mountThing = null;
       return;
     }
@@ -235,7 +247,7 @@
 
   // Load all sprites of the current group.
   $effect(() => {
-    if (!g) return;
+    if (!g || source) return;
     const ids = g.sprites;
     void app.rev;
     spriteCache.load(ids).then(() => {
@@ -260,7 +272,7 @@
       outfit: isOutfit,
       groups: thing?.frameGroups.length ?? 1,
       animateAlways: !!thing?.props.animateAlways,
-      improved: !!info && (info.format === Format.FormatAssets || info.features.improvedAnimations),
+      improved: source ? (source.improved ?? guessImproved(source.thing)) : !!info && (info.format === Format.FormatAssets || info.features.improvedAnimations),
     });
     try {
       animator = new Animator(Number(g.mode), 0, Math.min(Math.max(g.startFrame, 0), g.frames - 1), durations, performance.now());
@@ -287,7 +299,7 @@
     if (!g || !canvas) return;
     const addons = isOutfit ? [addon1 ? 1 : -1, addon2 ? 2 : -1].filter((y) => y > 0) : [];
     const p = { ...pos, z: isOutfit && mount && g.patternZ > 1 ? 1 : pos.z };
-    const get = (id: number) => spriteCache.get(id)?.pixels;
+    const get = getSprite;
     if (editing) {
       // The raw texture of the chosen layer, as it is stored.
       const img = paintImage ?? compose(g, g.sprites, size, { pos }, get);
@@ -329,7 +341,7 @@
 
   /** Puts sprites into slot and the following ones (multi-drag). */
   function assign(slot: number, ids: number[]) {
-    if (!g || !app.draft) return;
+    if (readonly || !g || !app.draft) return;
     const grp = app.draft.frameGroups[Math.min(group, app.draft.frameGroups.length - 1)];
     if (grp) grp.sprites = fillSlots(grp.sprites, slot, ids);
   }
@@ -343,7 +355,8 @@
 
   // Sheet view: every texture of the group at once, kept while browsing.
   // It has its own zoom (fit to window until changed by hand).
-  let sheetView = $state(savedSheetView);
+  const startSheet = untrack(() => !source && savedSheetView);
+  let sheetView = $state(startSheet);
   let sheetManualZoom = $state<number | null>(null);
   let sheetFitZoom = $state(1);
   const shownZoom = $derived(sheetView ? (sheetManualZoom ?? sheetFitZoom) : zoom);
@@ -362,9 +375,9 @@
     }
   }
 
-  if (savedSheetView) playing = false;
+  if (startSheet) playing = false;
   $effect(() => {
-    savedSheetView = sheetView;
+    if (!source) savedSheetView = sheetView;
   });
 
   function openTexture(p: TexturePos) {
@@ -385,7 +398,7 @@
 <!-- Images dropped here are sprite sheets for the object (commands.drop). -->
 <svelte:window onkeydown={view.key} onkeyup={view.key} onblur={view.blur} />
 
-<div class="preview" id={PREVIEW_DROP} data-file-drop-target>
+<div class="preview" {...readonly ? {} : { id: PREVIEW_DROP, "data-file-drop-target": true }}>
   {#if g && sheetView}
   <div class="stage-wrap">
     <SheetEditor
@@ -396,11 +409,14 @@
       {showGrid}
       pixelGrid={showPixelGrid}
       colors={isOutfit && colorize ? colors : null}
-      resetKey={`${app.category}:${thing?.id}:${group}`}
+      resetKey={`${source ? source.key : `${app.category}:${thing?.id}`}:${group}`}
       current={pos}
       onassign={assign}
+      get={getSprite}
+      {readonly}
       onpick={(slot) => {
         const id = g.sprites[slot];
+        if (readonly) return;
         if (id) app.selectedSprites = [id];
       }}
       onopen={openTexture}
@@ -443,14 +459,15 @@
               class:drop={dropSlot === s.slot}
               class:sel={id !== 0 && app.selectedSprites.includes(id)}
               style="left:{(s.x + riderOffset[0]) * zoom}px;top:{(s.y + riderOffset[1]) * zoom}px;width:{size * zoom}px;height:{size * zoom}px"
-              title="Slot {s.slot} → sprite #{id}{id ? '' : ' (empty)'}. Drop a sprite here, Del clears."
+              title="Slot {s.slot} → sprite #{id}{id ? '' : ' (empty)'}{readonly ? '' : '. Drop a sprite here, Del clears.'}"
               tabindex="0"
               role="button"
-              onclick={() => id && (app.selectedSprites = [id])}
+              onclick={() => id && !readonly && (app.selectedSprites = [id])}
               onkeydown={(e) => onSlotKey(e, s.slot)}
               onmouseenter={() => (hoverSlot = s.slot)}
               onmouseleave={() => (hoverSlot = null)}
               ondragover={(e) => {
+                if (readonly) return;
                 e.preventDefault();
                 dropSlot = s.slot;
               }}
@@ -494,7 +511,9 @@
         </button>
         <button class="t-icon-btn" title="Zoom in (Ctrl+wheel)" onclick={() => zoomBy(1)}><Icon name="zoomin" /></button>
         <button class="t-icon-btn" class:on={showGrid} title="Tile grid" onclick={() => (showGrid = !showGrid)}><Icon name="grid" /></button>
-        <button class="t-icon-btn" class:on={editing} title="Edit pixels" onclick={toggleEditing}><Icon name="pencil" /></button>
+        {#if !readonly}
+          <button class="t-icon-btn" class:on={editing} title="Edit pixels" onclick={toggleEditing}><Icon name="pencil" /></button>
+        {/if}
         <button
           class="t-icon-btn"
           class:on={showPixelGrid}
@@ -507,7 +526,7 @@
           title={sheetView ? "Back to one texture" : "All textures: drop sprites on any frame or pattern (double click opens one)"}
           onclick={() => {
             sheetView = !sheetView;
-            if (sheetView) playing = false;
+            if (startSheet) playing = false;
           }}><Icon name="film" /></button
         >
       </div>
@@ -530,7 +549,7 @@
           {/if}
           {#if g.patternZ > 1}
             <label class="row" title="Show the outfit riding another looktype"><input class="t-check" type="checkbox" bind:checked={mount} />Mount</label>
-            {#if mount}
+            {#if mount && !readonly}
               <NumberField value={mountId} min={0} max={app.maxId(Category.CategoryOutfit)} width={50} title="Mount looktype (0 = none)" onchange={(v) => (mountId = v)} />
             {/if}
           {/if}

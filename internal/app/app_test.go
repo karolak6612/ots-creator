@@ -177,6 +177,23 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatal("otobj and obd imports differ")
 	}
 
+	// Import at chosen ids: one replaces 101, one lands past the end with
+	// the gap filled.
+	plan, err := ts.PlanTargets(thing.CategoryItem, 101, 1, false)
+	if err != nil || len(plan.IDs) != 1 || plan.IDs[0] != 101 || len(plan.Taken) != 1 {
+		t.Fatalf("plan %+v %v", plan, err)
+	}
+	got, err := ts.ImportObjectsTo(thing.CategoryItem, []string{paths[0], paths[0]}, []uint32{101, 105})
+	if err != nil || len(got) != 2 || got[1] != 105 {
+		t.Fatalf("import to %v %v", got, err)
+	}
+	if gap, err := ts.Get(thing.CategoryItem, 104); err != nil || gap == nil {
+		t.Fatalf("gap must be filled: %v", err)
+	}
+	if _, err := ts.ImportObjectsTo(thing.CategoryOutfit, paths, []uint32{1}); err == nil {
+		t.Fatal("import to another category must fail")
+	}
+
 	// Sheet export + import.
 	sheet := filepath.Join(dir, "sheet.png")
 	if err := ts.ExportSheet(thing.CategoryItem, 100, 0, sheet, false); err != nil {
@@ -213,7 +230,7 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatal("inspect of an empty dir must fail")
 	}
 	st, err = ps.Open(OpenRequest{DatPath: cf.DatPath, SprPath: cf.SprPath, Features: cf.Features})
-	if err != nil || st.Info.Counts.Items != 102 {
+	if err != nil || st.Info.Counts.Items != 105 {
 		t.Fatalf("open %+v %v", st.Info.Counts, err)
 	}
 

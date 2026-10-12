@@ -11,7 +11,7 @@
   import { commands } from "../../lib/commands";
   import Dialog from "../../lib/ui/Dialog.svelte";
   import Icon from "../../lib/ui/Icon.svelte";
-  import { dequeue, enqueue, queued } from "../../lib/queue.svelte";
+  import { compareQueue } from "../../lib/queue.svelte";
   import DropPanel from "./DropPanel.svelte";
   import { openContextMenu, type MenuEntry } from "../../lib/menu.svelte";
   import ThingCanvas from "../../lib/ui/ThingCanvas.svelte";
@@ -141,8 +141,8 @@
       { label: "B → A (same id)", action: () => transfer(false, false, fromB), disabled: () => !fromB.length || busy() },
       { label: "Append to A", action: () => transfer(false, true, fromB), disabled: () => !fromB.length || busy() },
       "-",
-      { label: `Queue for A${unqueued.length > 1 ? ` (${unqueued.length})` : ""}`, keys: "Dbl click", action: () => enqueue(category, unqueued), disabled: () => !unqueued.length },
-      ...(inQueue.length ? [{ label: "Remove from queue", action: () => dequeue(category, inQueue) }] : []),
+      { label: `Queue for A${unqueued.length > 1 ? ` (${unqueued.length})` : ""}`, keys: "Dbl click", action: () => compareQueue.enqueue(category, unqueued), disabled: () => !unqueued.length },
+      ...(inQueue.length ? [{ label: "Remove from queue", action: () => compareQueue.dequeue(category, inQueue) }] : []),
       "-",
       { label: "A → B (same id)", action: () => transfer(true, false, fromA), disabled: () => !fromA.length || busy() },
       { label: "Append to B", action: () => transfer(true, true, fromA), disabled: () => !fromA.length || busy() },
@@ -190,13 +190,13 @@
     toast(`Copied ${what} to ${target}${appendNew ? ` as #${r.ids?.[0]}…` : ""}, ${r.sprites} new sprite(s).`, "success");
   }
 
-  const queuedIds = $derived(new Set(queued(category)));
+  const queuedIds = $derived(new Set(compareQueue.queued(category)));
 
   // Double click queues the object of B (or takes it out of the queue).
   function dblclick(e: DiffEntry) {
     if (e.status === "onlyA" || e.status === "copied") return;
-    if (queuedIds.has(e.id)) dequeue(category, [e.id]);
-    else enqueue(category, [e.id]);
+    if (queuedIds.has(e.id)) compareQueue.dequeue(category, [e.id]);
+    else compareQueue.enqueue(category, [e.id]);
   }
 
   /** Puts copied objects back as they were before they were copied. */
@@ -377,7 +377,7 @@
           <button class="t-btn" title="Add to the end of A as new objects" disabled={!fromB.length || !!app.busy} onclick={() => transfer(false, true, fromB)}
             >Append to A</button
           >
-          <button class="t-btn" title="Queue the selected objects of B, then click slots of A to drop them (double click a row queues it too)" disabled={!fromB.length} onclick={() => enqueue(category, fromB.map((e) => e.id))}
+          <button class="t-btn" title="Queue the selected objects of B, then click slots of A to drop them (double click a row queues it too)" disabled={!fromB.length} onclick={() => compareQueue.enqueue(category, fromB.map((e) => e.id))}
             >Queue</button
           >
           <span class="t-sep v"></span>
@@ -389,7 +389,7 @@
           >
         </div>
       </div>
-      <div class="side-panel"><DropPanel {category} onshow={show} /></div>
+      <div class="side-panel"><DropPanel queue={compareQueue} {category} onshow={show} onshowSlot={show} /></div>
     </div>
   </div>
   {#snippet footer()}

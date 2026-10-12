@@ -196,3 +196,12 @@ export function previewDurations(g: { frames: number; durations: Duration[] | nu
   if (g.durations?.length === g.frames) return g.durations;
   return fixed(g.frames, 100);
 }
+
+/**
+ * Things from files without a client (market, OBD): frame groups or
+ * durations other than the 300 ms placeholder mean stored durations.
+ */
+export function guessImproved(t: { frameGroups: { durations: Duration[] | null }[] }): boolean {
+  if (t.frameGroups.length > 1) return true;
+  return t.frameGroups.some((fg) => (fg.durations ?? []).some((d) => d.min !== 300 || d.max !== 300));
+}

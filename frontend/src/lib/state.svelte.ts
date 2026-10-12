@@ -4,6 +4,7 @@
 import { Events } from "@wailsio/runtime";
 import { Category, CompareService, ProjectService, ThingService, errorMessage, normalizeThing, type State, type Thing } from "./api";
 import { otherSpriteCache, spriteCache, type SpriteCache } from "./render/sprites";
+import type { QueueItem } from "./queue.svelte";
 
 export type ToastKind = "info" | "success" | "error";
 export interface Toast {
@@ -75,7 +76,9 @@ class AppState {
   /** What the share window publishes. */
   shareTarget = $state<ShareTarget | null>(null);
   /** Objects of B queued in the compare window to be dropped into A. */
-  queue = $state<{ category: Category; id: number }[]>([]);
+  queue = $state<QueueItem<number>[]>([]);
+  /** Object files queued in the object viewer to be dropped into A. */
+  fileQueue = $state<QueueItem<string>[]>([]);
 
   get open(): boolean {
     return !!this.project?.open;

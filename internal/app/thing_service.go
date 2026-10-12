@@ -154,6 +154,41 @@ func (ts *ThingService) ImportObjects(paths []string, replaceID uint32) ([]Impor
 	return out, nil
 }
 
+// ImportObjectsTo imports object files of category c, paths[i] to
+// targets[i], replacing the things there (targets past the end extend the
+// category). It is one undoable edit and returns the ids.
+func (ts *ThingService) ImportObjectsTo(c thing.Category, paths []string, targets []uint32) ([]uint32, error) {
+	p, err := ts.s.Project()
+	if err != nil {
+		return nil, err
+	}
+	if len(paths) == 0 {
+		return nil, errors.New("nothing to import")
+	}
+	ds := make([]*obd.Data, len(paths))
+	for i, path := range paths {
+		if ds[i], err = readObject(path); err != nil {
+			return nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
+		}
+	}
+	ids, err := p.ImportOBDsTo(c, ds, targets)
+	if err != nil {
+		return nil, err
+	}
+	ts.s.Changed()
+	return ids, nil
+}
+
+// PlanTargets returns n target ids of the open client from id from on:
+// free ids only (see project.FreeIDs), or consecutive ids.
+func (ts *ThingService) PlanTargets(c thing.Category, from uint32, n int, freeOnly bool) (TargetPlan, error) {
+	p, err := ts.s.Project()
+	if err != nil {
+		return TargetPlan{}, err
+	}
+	return planTargets(p, c, from, n, freeOnly)
+}
+
 // ExportObjects writes one file per thing into dir, named
 // {category}_{id}.otobj or .obd by format (ObjectOTOBJ or ObjectOBD).
 // Imports accept every version of both formats.

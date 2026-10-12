@@ -3,7 +3,7 @@
   // and the animated list thumbnails. Pixels come from `get`; bump `ready`
   // when more sprites have loaded.
   import { Category, type Thing } from "../api";
-  import { Animator, previewDurations } from "../render/animator";
+  import { Animator, guessImproved, previewDurations } from "../render/animator";
   import { compose, type PixelSource } from "../render/compose";
   import { contentBox, union, type Box } from "../render/bounds";
   import { DEFAULT_COLORS } from "../render/outfit";
@@ -37,13 +37,6 @@
     /** The client stores frame durations; guessed from the thing when not given. */
     improved?: boolean;
   } = $props();
-
-  // Things from files without a client (market, OBD): frame groups or
-  // durations other than the 300 ms placeholder mean stored durations.
-  function guessImproved(t: Thing): boolean {
-    if (t.frameGroups.length > 1) return true;
-    return t.frameGroups.some((fg) => fg.durations.some((d) => d.min !== 300 || d.max !== 300));
-  }
 
   let canvas = $state<HTMLCanvasElement>();
   let frame = $state(0);

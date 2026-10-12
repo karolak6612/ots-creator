@@ -136,17 +136,9 @@ type TargetPlan struct {
 	Taken []uint32 `json:"taken"`
 }
 
-// PlanTargets returns n target ids from id from on in A, or in B with
-// toOther: free ids only (see project.FreeIDs), or consecutive ids.
-func (cs *CompareService) PlanTargets(toOther bool, c thing.Category, from uint32, n int, freeOnly bool) (TargetPlan, error) {
-	a, b, err := cs.both()
-	if err != nil {
-		return TargetPlan{}, err
-	}
-	dst := a
-	if toOther {
-		dst = b
-	}
+// planTargets returns n target ids in p from id from on: free ids only
+// (see project.FreeIDs), or consecutive ids.
+func planTargets(p *project.Project, c thing.Category, from uint32, n int, freeOnly bool) (TargetPlan, error) {
 	if n <= 0 {
 		return TargetPlan{IDs: []uint32{}, Taken: []uint32{}}, nil
 	}
@@ -155,14 +147,14 @@ func (cs *CompareService) PlanTargets(toOther bool, c thing.Category, from uint3
 	}
 	from = max(from, c.MinID())
 	if freeOnly {
-		ids, err := dst.FreeIDs(c, from, n)
+		ids, err := p.FreeIDs(c, from, n)
 		return TargetPlan{IDs: ids, Taken: []uint32{}}, err
 	}
 	ids := make([]uint32, n)
 	for i := range ids {
 		ids[i] = from + uint32(i)
 	}
-	return TargetPlan{IDs: ids, Taken: dst.TakenIDs(c, ids)}, nil
+	return TargetPlan{IDs: ids, Taken: p.TakenIDs(c, ids)}, nil
 }
 
 func (cs *CompareService) transfer(toOther bool, dst *project.Project, c thing.Category, run func() (project.TransferResult, error)) (project.TransferResult, error) {
