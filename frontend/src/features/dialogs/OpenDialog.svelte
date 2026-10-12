@@ -14,6 +14,8 @@
 
   /** Fills the form with a recent client, so its version and features can be changed before opening. */
   async function pickRecent(r: Recent) {
+    // Assets have nothing to choose.
+    if (r.format === Format.FormatAssets) return openRecent(r);
     await inspect(r.datPath);
     if (!files) return;
     features = { ...r.features };
@@ -54,13 +56,18 @@
     versions = ((await ProjectService.Versions()) ?? []).slice().reverse();
     const dropped = app.openPath;
     app.openPath = "";
-    if (dropped) await inspect(dropped);
+    if (dropped) await inspectAndOpen(dropped);
   });
 
   async function browse() {
     const dir = await DialogService.PickDirectory(other ? "compareClient" : "openClient", "Open client folder");
-    if (!dir) return;
+    if (dir) await inspectAndOpen(dir);
+  }
+
+  /** Inspects a folder and opens it right away when there is nothing to choose: assets, or a known version with an .otfi. */
+  async function inspectAndOpen(dir: string) {
     await inspect(dir);
+    if (files?.detected && (isAssets || files.hasOtfi)) await open();
   }
 
   async function inspect(dir: string) {

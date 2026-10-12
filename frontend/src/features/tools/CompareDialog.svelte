@@ -17,6 +17,7 @@
   import ThingCanvas from "../../lib/ui/ThingCanvas.svelte";
   import VirtualGrid from "../../lib/ui/VirtualGrid.svelte";
   import { loading as imgLoading } from "../../lib/ui/loading";
+  import Preview, { type PreviewSource } from "../Preview.svelte";
 
   type Status = "changed" | "onlyA" | "onlyB";
   const STATUS_LABELS: Record<Status, string> = { changed: "Changed", onlyA: "Only in A", onlyB: "Only in B" };
@@ -42,7 +43,7 @@
   let hideEmpty = $state(true);
   const visible = $derived((diff?.entries ?? []).filter((e) => !(hideEmpty && e.empty)));
   let selected = $state<number[]>([]);
-  let anchor: number | null = null;
+  let anchor = $state<number | null>(null);
 
   const a = $derived(app.project?.info);
   const b = $derived(app.other?.info);
@@ -105,6 +106,41 @@
       })
       .catch((e) => n === seq && ((diff = null), (error = String(e?.message ?? e))))
       .finally(() => n === seq && (loading = false));
+  });
+
+  // The last clicked object is previewed, from A or B.
+  const focused = $derived(entries.find((e) => e.id === anchor && selected.includes(e.id)) ?? null);
+  let side = $state<"A" | "B">("B");
+  const hasA = $derived(!!focused && focused.status !== "onlyB");
+  const hasB = $derived(!!focused && focused.status !== "onlyA");
+  const shownSide = $derived(side === "B" ? (hasB ? "B" : "A") : hasA ? "A" : "B");
+  let source = $state<PreviewSource | null>(null);
+  let group = $state(0);
+  let previewSeq = 0;
+  $effect(() => {
+    const e = focused;
+    const s = shownSide;
+    const c = category;
+    void app.project?.rev;
+    void app.other?.rev;
+    const n = ++previewSeq;
+    if (!e || e.status === "copied" || (s === "A" ? !hasA : !hasB)) {
+      source = null;
+      return;
+    }
+    const cache = s === "A" ? spriteCache : otherSpriteCache;
+    void (async () => {
+      try {
+        const raw = await (s === "A" ? ThingService.Get : CompareService.Thing)(c, e.id);
+        if (!raw || n !== previewSeq) return;
+        const thing = normalizeThing(raw);
+        await cache.load(thing.frameGroups.flatMap((g) => g.sprites));
+        if (n !== previewSeq) return;
+        source = { key: `${s}:${c}:${e.id}`, thing, get: (id) => cache.get(id)?.pixels, size: cache.size, improved: s === "A" ? improvedA : improvedB };
+      } catch {
+        if (n === previewSeq) source = null;
+      }
+    })();
   });
 
   function setCategory(c: Category) {
@@ -276,7 +312,7 @@
   }
 </script>
 
-<Dialog title="Compare & Merge Clients" width={900} onclose={() => (app.dialog = null)}>
+<Dialog title="Compare & Merge Clients" width={1000} onclose={() => (app.dialog = null)}>
   <div class="col compare">
     <div class="clients">
       <div class="client t-panel">
@@ -356,7 +392,7 @@
                   </span>
                   {#if queuedIds.has(e.id)}<span class="tag" title="Queued for A (double click removes it)">queued</span>{/if}
                   <span class="state {e.status}">{e.status === "copied" ? "Copied" : STATUS_LABELS[e.status as Status]}</span>
-                  <span class="t-label changes">{(e.changes ?? []).map((c) => CHANGE_LABELS[c] ?? c).join(", ")}</span>
+                  <span class="t-label changes" title={(e.changes ?? []).map((c) => CHANGE_LABELS[c] ?? c).join(", ")}>{(e.changes ?? []).map((c) => CHANGE_LABELS[c] ?? c).join(", ")}</span>
                   {#if copied[e.id]}
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <span class="revert" role="button" tabindex="-1" title="Revert this copy" onclick={(ev) => (ev.stopPropagation(), revert([e.id]))}><Icon name="undo" /></span>
@@ -368,28 +404,42 @@
           {#if loading && diff}<span class="spinner corner"></span>{/if}
         </div>
 
-        <div class="row actions">
-          <span class="t-label">{selected.length ? `${picked.length} selected` : "Select objects to copy (Ctrl+A, Shift, Ctrl)."}</span>
-          <span class="grow"></span>
-          <button class="t-btn" title="Replace in A, or add with the same id" disabled={!fromB.length || !!app.busy} onclick={() => transfer(false, false, fromB)}
-            >B → A</button
-          >
-          <button class="t-btn" title="Add to the end of A as new objects" disabled={!fromB.length || !!app.busy} onclick={() => transfer(false, true, fromB)}
-            >Append to A</button
-          >
-          <button class="t-btn" title="Queue the selected objects of B, then click slots of A to drop them (double click a row queues it too)" disabled={!fromB.length} onclick={() => compareQueue.enqueue(category, fromB.map((e) => e.id))}
-            >Queue</button
-          >
-          <span class="t-sep v"></span>
-          <button class="t-btn" title="Replace in B, or add with the same id" disabled={!fromA.length || !!app.busy} onclick={() => transfer(true, false, fromA)}
-            >A → B</button
-          >
-          <button class="t-btn" title="Add to the end of B as new objects" disabled={!fromA.length || !!app.busy} onclick={() => transfer(true, true, fromA)}
-            >Append to B</button
-          >
+      </div>
+      <div class="col view">
+        <div class="row">
+          <div class="t-tabs">
+            <button class="t-tab" class:on={focused && shownSide === "A"} disabled={!hasA} onclick={() => (side = "A")}>A</button>
+            <button class="t-tab" class:on={focused && shownSide === "B"} disabled={!hasB} onclick={() => (side = "B")}>B</button>
+          </div>
+          <strong class="pname">{focused ? `#${focused.id}${source?.thing.name ? ` ${source.thing.name}` : ""}` : ""}</strong>
         </div>
+        {#if source}
+          <Preview {source} bind:group />
+        {:else}
+          <div class="stage t-panel t-label">{focused?.status === "copied" ? "Copied: the object is the same in both clients now." : "Click an object to preview it."}</div>
+        {/if}
       </div>
       <div class="side-panel"><DropPanel queue={compareQueue} {category} onshow={show} onshowSlot={show} /></div>
+    </div>
+    <div class="row actions">
+      <span class="t-label">{selected.length ? `${picked.length} selected` : "Select objects to copy (Ctrl+A, Shift, Ctrl)."}</span>
+      <span class="grow"></span>
+      <button class="t-btn" title="Replace in A, or add with the same id" disabled={!fromB.length || !!app.busy} onclick={() => transfer(false, false, fromB)}
+        >B → A</button
+      >
+      <button class="t-btn" title="Add to the end of A as new objects" disabled={!fromB.length || !!app.busy} onclick={() => transfer(false, true, fromB)}
+        >Append to A</button
+      >
+      <button class="t-btn" title="Queue the selected objects of B, then click slots of A to drop them (double click a row queues it too)" disabled={!fromB.length} onclick={() => compareQueue.enqueue(category, fromB.map((e) => e.id))}
+        >Queue</button
+      >
+      <span class="t-sep v"></span>
+      <button class="t-btn" title="Replace in B, or add with the same id" disabled={!fromA.length || !!app.busy} onclick={() => transfer(true, false, fromA)}
+        >A → B</button
+      >
+      <button class="t-btn" title="Add to the end of B as new objects" disabled={!fromA.length || !!app.busy} onclick={() => transfer(true, true, fromA)}
+        >Append to B</button
+      >
     </div>
   </div>
   {#snippet footer()}
@@ -448,16 +498,17 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    height: 340px;
+    flex: 1;
+    min-height: 0;
     padding: 2px;
   }
   .entry {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     width: 100%;
     height: 100%;
-    padding: 0 6px;
+    padding: 0 4px;
     border: 1px solid transparent;
     background: rgba(255, 255, 255, 0.02);
     font: inherit;
@@ -481,13 +532,13 @@
     object-fit: contain;
   }
   .id {
-    width: 48px;
+    width: 42px;
     text-align: right;
     color: var(--text-bright);
   }
   .state {
     flex: none;
-    width: 70px;
+    width: 64px;
   }
   .changed {
     color: var(--gold);
@@ -565,12 +616,32 @@
   }
   .body {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 250px;
+    grid-template-columns: 440px minmax(0, 1fr) 212px;
     gap: 8px;
+    height: 400px;
+  }
+  .view {
+    gap: 4px;
+    min-width: 0;
+    min-height: 0;
+  }
+  .pname {
+    color: var(--text-bright);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .stage {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    padding: 12px;
+    text-align: center;
   }
   .main {
     gap: 6px;
     min-width: 0;
+    min-height: 0;
   }
   .side-panel {
     position: relative;

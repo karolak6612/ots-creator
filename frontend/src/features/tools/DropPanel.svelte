@@ -189,7 +189,7 @@
     flex: 1;
     min-height: 0;
     display: flex;
-    padding: 3px;
+    padding: 2px;
   }
   .q,
   .slot {

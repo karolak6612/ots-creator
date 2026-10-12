@@ -1,6 +1,7 @@
 // User actions shared by the menu bar, toolbar, context menus and shortcuts.
 import {
   CATEGORY_NAMES,
+  CompareService,
   Format,
   DialogService,
   ProjectService,
@@ -118,10 +119,30 @@ export const commands = {
     app.openPath = path;
     app.dialog = "open";
   },
-  /** Asks for the client folder first, then shows the open form filled with it. */
-  async browseOpen() {
-    const dir = await DialogService.PickDirectory("openClient", "Open client folder");
-    if (dir) commands.open(dir);
+  /**
+   * Asks for the client folder first. Clients with nothing to choose (assets,
+   * or a known version with an .otfi) open right away; others show the open
+   * form filled with the folder. other loads client B of the compare window.
+   */
+  async browseOpen(other = false) {
+    const dir = await DialogService.PickDirectory(other ? "compareClient" : "openClient", "Open client folder");
+    if (!dir) return;
+    let files;
+    try {
+      files = await ProjectService.Inspect(dir);
+    } catch {
+      files = null;
+    }
+    if (!files?.detected || !(files.format === Format.FormatAssets || files.hasOtfi)) {
+      app.openOther = other;
+      commands.open(dir);
+      return;
+    }
+    const req = { format: files.format, datPath: files.datPath, sprPath: files.sprPath, version: null, features: files.features };
+    const st = await run("Loading client", () => (other ? CompareService.Open(req) : ProjectService.Open(req)));
+    if (!st?.open) return;
+    if (other) app.dialog = "compare";
+    toast(`Loaded ${files.detected.name}: ${st.info.counts.items - 99} items, ${st.info.counts.sprites} sprites.`, "success");
   },
   create: () => (app.dialog = "new"),
   /** Opens the compare window; without a second client it asks for one first. */
