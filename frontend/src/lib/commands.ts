@@ -118,6 +118,11 @@ export const commands = {
     app.openPath = path;
     app.dialog = "open";
   },
+  /** Asks for the client folder first, then shows the open form filled with it. */
+  async browseOpen() {
+    const dir = await DialogService.PickDirectory("openClient", "Open client folder");
+    if (dir) commands.open(dir);
+  },
   create: () => (app.dialog = "new"),
   /** Opens the compare window; without a second client it asks for one first. */
   compare: () => {

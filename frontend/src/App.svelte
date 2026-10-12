@@ -127,7 +127,7 @@
           <img class="pixel" src="/icon.png" alt="" width="48" height="48" />
           <p>Open a client (Tibia.dat + Tibia.spr) or start a new one.</p>
           <div class="row">
-            <button class="t-btn primary" onclick={() => commands.open()}>Open client…</button>
+            <button class="t-btn primary" onclick={commands.browseOpen}>Open client…</button>
             <button class="t-btn" onclick={commands.create}>New client…</button>
           </div>
           {#if recent.length}
