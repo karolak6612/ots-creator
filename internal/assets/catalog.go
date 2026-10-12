@@ -106,10 +106,11 @@ func (c *Catalog) Find(id uint32) (int, bool) {
 	return 0, false
 }
 
-// NextSpriteID returns the first unused sprite id after every sheet.
+// NextSpriteID returns the first unused sprite id after every sheet. Ids
+// start at 1: clients read sprite id 0 as "no sprite".
 func (c *Catalog) NextSpriteID() uint32 {
 	if len(c.Sheets) == 0 {
-		return 0
+		return 1
 	}
 	return c.Sheets[len(c.Sheets)-1].Last + 1
 }

@@ -42,6 +42,52 @@ func buildAssets(t *testing.T) string {
 	return dir
 }
 
+// Converting from dat must not hand out sprite id 0, clients read it as "no sprite".
+func TestAssetsSpriteIDsStartAtOne(t *testing.T) {
+	cat, err := assets.ReadCatalog(buildAssets(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cat.Sheets[0].First != 1 {
+		t.Fatalf("first sheet starts at %d", cat.Sheets[0].First)
+	}
+}
+
+// Folders written by older versions hold sprite id 0; compiling them again
+// gives that sprite a new id and keeps every other sprite.
+func TestResolveRewritesSpriteZero(t *testing.T) {
+	p, err := OpenAssets(buildAssets(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	shifted := &assets.Catalog{}
+	for _, sheet := range p.assets.catalog.Sheets {
+		sheet.First--
+		sheet.Last--
+		shifted.Sheets = append(shifted.Sheets, sheet)
+	}
+	writer := &assetWriter{p: p, pieces: assets.NewPieceMap(shifted), known: map[string]*newSprite{}}
+
+	small, _ := p.Thing(thing.CategoryItem, 100)
+	if _, err := writer.resolve(small.FrameGroups[0].Sprites[:1], 1, 1); err != nil {
+		t.Fatal(err)
+	}
+	if len(writer.order) != 1 {
+		t.Fatalf("sprite 0 must become a new sprite, got %d new", len(writer.order))
+	}
+
+	big, _ := p.Thing(thing.CategoryItem, 101)
+	pieces := big.FrameGroups[0].Sprites[:4]
+	want, _ := writer.pieces.Sprite(pieces, 2, 2)
+	got, err := writer.resolve(pieces, 2, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want == 0 || got != want || len(writer.order) != 1 {
+		t.Fatalf("untouched sprite %d resolved to %d, %d new", want, got, len(writer.order))
+	}
+}
+
 func piece(t *testing.T, p *Project, id uint32) []byte {
 	t.Helper()
 	px, err := p.SpritePixels(id)

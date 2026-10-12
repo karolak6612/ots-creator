@@ -216,10 +216,11 @@ type assetWriter struct {
 
 // resolve implements assets.Resolver. Untouched pieces of an existing
 // sprite map back to it; anything else becomes a new sprite (identical
-// textures share one).
+// textures share one). Sprite id 0, which older conversions handed out,
+// is written again as a new sprite because clients read 0 as "no sprite".
 func (w *assetWriter) resolve(pieces []uint32, tw, th int) (uint32, error) {
 	if w.pieces != nil {
-		if id, ok := w.pieces.Sprite(pieces, tw, th); ok && !w.anyEdited(pieces) {
+		if id, ok := w.pieces.Sprite(pieces, tw, th); ok && id != 0 && !w.anyEdited(pieces) {
 			return id, nil
 		}
 	}
