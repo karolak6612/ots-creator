@@ -1,6 +1,11 @@
 <script lang="ts">
   import { commands } from "../lib/commands";
   import { app } from "../lib/state.svelte";
+  import { map, warningCount } from "../lib/map/state.svelte";
+
+  let { mapHover = "" }: { mapHover?: string } = $props();
+  const m = $derived(map.active);
+  const warnings = $derived(map.activeId !== null ? warningCount(map.loadWarnings[map.activeId]) : 0);
 
   const info = $derived(app.project?.info);
   const flags = $derived.by(() => {
@@ -16,7 +21,17 @@
   <!-- The client info gives way first on a narrow window: the busy text and
        the stop button always stay visible. -->
   <div class="info">
-    {#if info && app.open}
+    {#if map.mode === "map" && m}
+      <span class="v">{m.name}</span>
+      {#if m.changed}<span class="changed">● unsaved changes</span>{/if}
+      <span>Floor <b>{map.floor}</b></span>
+      <span>Tiles <b>{m.tiles.toLocaleString()}</b></span>
+      {#if m.selection}<span>Selected <b>{m.selection.toLocaleString()}</b>{#if m.selection > 1} <span class="t-label">({m.selMax.x - m.selMin.x + 1}×{m.selMax.y - m.selMin.y + 1})</span>{/if}</span>{/if}
+      <span class="sep"></span>
+      <span class="hover">{mapHover}</span>
+    {:else if map.mode === "map"}
+      <span class="t-label">{app.open ? "No map open" : "No client loaded"}</span>
+    {:else if info && app.open}
       <span class="v">{info.version.name}</span>
       {#if info.changed}<span class="changed" title="The client has changes that are not compiled yet">● uncompiled changes</span>{/if}
       <span class="t-label">{info.formatLabel}</span>
@@ -35,6 +50,11 @@
   {#if app.busy || app.stoppable}
     <span class="busy" class:fixed={app.stoppable}>{app.busy ?? "Exporting"}…</span>
     {#if app.stoppable}<button class="t-btn danger stop" title="Stop the export" disabled={app.stopping} onclick={commands.stopTask}>{app.stopping ? "Stopping" : "Stop"}</button>{/if}
+  {:else if map.mode === "map" && m}
+    {#if warnings}
+      <button class="warn" title="Problems found while loading the map: click to see them" onclick={() => (map.dialog = "warnings")}>⚠ {warnings.toLocaleString()} warning{warnings > 1 ? "s" : ""}</button>
+    {/if}
+    <span class="t-label path" title={m.path}>{m.path || "not saved"}</span>
   {:else if info && app.open}
     <span class="t-label path" title={info.datPath}>{info.datPath || "not saved"}</span>
   {/if}
@@ -56,6 +76,18 @@
     background: url("../assets/ui/panel_map.png");
     white-space: nowrap;
     overflow: hidden;
+  }
+  .warn {
+    flex: none;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: #e8c45e;
+    cursor: pointer;
+  }
+  .warn:hover {
+    text-decoration: underline;
   }
   .v {
     color: var(--gold);
@@ -95,6 +127,11 @@
     flex: none;
     height: 18px;
     min-width: 64px;
+  }
+.hover {
+    color: var(--text-bright);
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .path {
     flex: 0 1 auto;

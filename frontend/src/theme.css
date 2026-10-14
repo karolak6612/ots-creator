@@ -1,6 +1,7 @@
-/* Tibia client look built from OTClient (mehah) UI images.
-   Every 9-slice uses border-image with the borders from the OTUI styles.
-   Like OTClient's image-border, edges and center are tiled, not stretched.
+/* Tibia client look built from the Tibia 13 client UI images (window and
+   widget frames, buttons, tabs, scrollbars, checkboxes) and OTClient (mehah)
+   images where the client has none. Every 9-slice uses border-image with the
+   borders measured from the images. Edges and center are tiled, not stretched.
 
    Fonts are OTClient bitmap fonts converted to pixel TTFs (tools/otfont2ttf.py).
    They render 1:1 only at their em size: --fs (14px) and --fs-small (9px). */
@@ -109,21 +110,23 @@ body {
 
 /* ---------- containers ---------- */
 
+/* dialog-frame-borderimage: 2px bevel, 14px title bar, 1px line; 4px sides. */
 .t-window {
   position: relative;
   display: flex;
   flex-direction: column;
   border-style: solid;
-  border-width: 27px 6px 6px 6px;
-  border-image: url("./assets/ui/window.png") 27 6 6 6 fill / 27px 6px 6px 6px repeat;
+  border-width: 17px 4px 4px 4px;
+  border-image: url("./assets/ui/dialog-frame-borderimage.png") 17 4 4 4 fill / 17px 4px 4px 4px repeat;
   min-height: 0;
 }
 .t-window > .t-window-title {
   position: absolute;
-  top: -27px;
+  top: -15px;
   left: 0;
   right: 0;
-  height: 27px;
+  height: 14px;
+  line-height: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -133,31 +136,38 @@ body {
   pointer-events: none;
 }
 
+/* widget-borderimage (sidebar widget): 2px bevel, 12px header, 1px line;
+   4px sides. The header sits in the top border. */
 .t-mini {
   display: flex;
   flex-direction: column;
   min-height: 0;
   border-style: solid;
-  border-width: 4px;
-  border-image: url("./assets/ui/miniwindow_body.png") 4 fill / 4px repeat;
+  border-width: 15px 4px 4px 4px;
+  border-image: url("./assets/ui/widget-borderimage.png") 15 4 4 4 fill / 15px 4px 4px 4px repeat;
 }
 .t-mini-header {
   flex: none;
-  height: 17px;
-  margin: -4px -4px 0;
-  padding: 0 8px;
+  height: 12px;
+  margin: -13px -2px 1px;
+  padding: 0 4px;
   display: flex;
   align-items: center;
   gap: 6px;
   color: var(--text-bright);
   font-weight: bold;
   font-size: var(--fs);
+  line-height: 12px;
   text-shadow: 1px 1px 0 #000;
-  border-style: solid;
-  border-width: 4px 4px 4px 4px;
-  border-image: url("./assets/ui/miniwindow_header.png") 4 fill / 4px repeat;
-  border-top: 0;
-  border-bottom: 0;
+}
+/* Header buttons fit the 12px bar. */
+.t-mini-header .t-icon-btn {
+  width: 13px;
+  height: 12px;
+}
+.t-mini-header .t-icon-btn svg {
+  width: 9px;
+  height: 9px;
 }
 .t-mini-body {
   flex: 1;
@@ -195,16 +205,21 @@ body {
   border-image: url("./assets/ui/2pixel-up-frame-borderimage.png") 2 fill / 2px repeat;
 }
 
+/* A dark line over a bright one, like the client's separators. */
 .t-sep {
   height: 2px;
-  background: url("./assets/ui/separator_horizontal.png") repeat-x;
+  background:
+    url("./assets/ui/horizontal-line-dark.png") 0 0 / auto 1px repeat-x,
+    url("./assets/ui/horizontal-line-bright.png") 0 1px / auto 1px repeat-x;
   margin: 6px 0;
   flex: none;
 }
 .t-vsep {
   width: 2px;
   align-self: stretch;
-  background: url("./assets/ui/separator_vertical.png") repeat-y;
+  background:
+    url("./assets/ui/vertical-line-dark.png") 0 0 / 1px auto repeat-y,
+    url("./assets/ui/vertical-line-bright.png") 1px 0 / 1px auto repeat-y;
 }
 
 /* ---------- controls ---------- */
@@ -223,7 +238,7 @@ body {
   background: transparent;
   border-style: solid;
   border-width: 1px;
-  border-image: url("./assets/ui/btn-idle.png") 1 fill / 1px repeat;
+  border-image: url("./assets/ui/button-grey-up.png") 1 fill / 1px repeat;
   cursor: pointer;
   text-shadow: 1px 1px 0 #000;
   outline: none;
@@ -233,7 +248,7 @@ body {
 }
 .t-btn:active:not(:disabled),
 .t-btn.on {
-  border-image-source: url("./assets/ui/btn-pressed.png");
+  border-image-source: url("./assets/ui/button-grey-down.png");
   padding-top: 2px;
   padding-left: 11px;
 }
@@ -248,6 +263,15 @@ body {
 .t-btn.primary {
   color: #fff;
 }
+/* button-green: actions that should stand out (the client's "Buy", "Start"). */
+.t-btn.green {
+  color: #fff;
+  border-image-source: url("./assets/ui/button-green-up.png");
+}
+.t-btn.green:active:not(:disabled),
+.t-btn.green.on {
+  border-image-source: url("./assets/ui/button-green-down.png");
+}
 .t-btn.danger {
   color: #fff;
   border-image: url("./assets/ui/btn-danger-idle.png") 3 fill / 3px stretch;
@@ -255,28 +279,39 @@ body {
 .t-btn.danger:active:not(:disabled) {
   border-image-source: url("./assets/ui/btn-danger-pressed.png");
 }
+/* Small remove buttons (×): red when pointed at. */
+.t-icon-btn.danger:hover:not(:disabled) {
+  color: #ff8a8a;
+}
 
-/* Square icon button (22x23) */
+/* Square icon button (20x20 like the client's small buttons):
+   button-textured, a 1px bevel around stone. */
 .t-icon-btn {
-  width: 22px;
-  height: 23px;
+  width: 20px;
+  height: 20px;
   padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--text-bright);
-  background: url("./assets/ui/sqbtn-idle.png");
-  border: 0;
+  background: none;
+  border-style: solid;
+  border-width: 1px;
+  border-image: url("./assets/ui/button-textured-up.png") 1 fill / 1px repeat;
   cursor: pointer;
   outline: none;
   flex: none;
 }
 .t-icon-btn:hover:not(:disabled) {
-  background-image: url("./assets/ui/sqbtn-hover.png");
+  filter: brightness(1.18);
 }
 .t-icon-btn:active:not(:disabled),
 .t-icon-btn.on {
-  background-image: url("./assets/ui/sqbtn-pressed.png");
+  border-image-source: url("./assets/ui/button-textured-down.png");
+}
+.t-icon-btn:active:not(:disabled) > *,
+.t-icon-btn.on > * {
+  transform: translate(1px, 1px);
 }
 .t-icon-btn:disabled {
   opacity: 0.4;
@@ -326,15 +361,28 @@ input[type="number"].t-input::-webkit-outer-spin-button {
   height: 12px;
   margin: 0;
   flex: none;
-  background: url("./assets/ui/check-off.png");
+  background: url("./assets/ui/checkbox-unchecked.png");
   cursor: pointer;
 }
 .t-check:checked {
-  background-image: url("./assets/ui/check-on.png");
+  background-image: url("./assets/ui/checkbox-checked.png");
+}
+.t-check[type="radio"] {
+  background-image: url("./assets/ui/radiobutton-unchecked.png");
+}
+.t-check[type="radio"]:checked {
+  background-image: url("./assets/ui/radiobutton-checked.png");
 }
 .t-check:disabled {
   opacity: 0.5;
   cursor: default;
+}
+.t-check:checked:disabled {
+  opacity: 1;
+  background-image: url("./assets/ui/checkbox-checked-disabled.png");
+}
+.t-check[type="radio"]:checked:disabled {
+  background-image: url("./assets/ui/radiobutton-checked-disabled.png");
 }
 
 .t-tabs {
@@ -342,6 +390,7 @@ input[type="number"].t-input::-webkit-outer-spin-button {
   gap: 2px;
   flex: none;
 }
+/* console-tab: 2px bevel, open at the bottom; the active tab is lighter. */
 .t-tab {
   flex: 1;
   font: inherit;
@@ -350,19 +399,20 @@ input[type="number"].t-input::-webkit-outer-spin-button {
   padding: 0 6px;
   background: transparent;
   border-style: solid;
-  border-width: 3px 3px 0 3px;
-  border-image: url("./assets/ui/tab-idle.png") 3 3 0 3 fill / 3px 3px 0 3px repeat;
+  border-width: 2px 2px 0 2px;
+  border-image: url("./assets/ui/console-tab-passive.png") 2 2 2 2 fill / 2px 2px 0 2px repeat;
   cursor: pointer;
   white-space: nowrap;
   text-shadow: 1px 1px 0 #000;
 }
 .t-tab:hover {
-  border-image-source: url("./assets/ui/tab-hover.png");
   color: var(--text-bright);
+  filter: brightness(1.15);
 }
 .t-tab.on {
-  border-image-source: url("./assets/ui/tab-on.png");
+  border-image: url("./assets/ui/console-tab-active.png") 2 2 0 2 fill / 2px 2px 0 2px repeat;
   color: #fff;
+  filter: none;
 }
 
 /* Item slot (34x34) */
@@ -418,75 +468,69 @@ input[type="number"].t-input::-webkit-outer-spin-button {
   width: 12px;
   height: 12px;
 }
-/* VerticalScrollBar: scrollbar.png clip 24 0 12 74, image-border 1 */
+/* scrollbar-texture: 1px bevel at the sides, tiled along. */
 ::-webkit-scrollbar-track:vertical {
-  border-style: solid;
-  border-width: 1px;
-  border-image: url("./assets/ui/sb-track-v.png") 1 fill / 1px repeat;
+  background: url("./assets/ui/scrollbar-texture-vertical.png") repeat-y;
 }
-/* HorizontalScrollBar: clip 0 38 24 12, image-border 1 */
 ::-webkit-scrollbar-track:horizontal {
-  border-style: solid;
-  border-width: 1px;
-  border-image: url("./assets/ui/sb-track-h.png") 1 fill / 1px repeat;
+  background: url("./assets/ui/scrollbar-texture-horizontal.png") repeat-x;
 }
-/* VerticalScrollBarSlider: clip 0 24 12 14, image-border 6 */
+/* scrollbar-handle: a rounded bar; the 6px ends stay, the middle stretches. */
 ::-webkit-scrollbar-thumb:vertical {
   min-height: 14px;
   border-style: solid;
-  border-width: 6px;
-  border-image: url("./assets/ui/sb-thumb-v.png") 6 fill / 6px repeat;
+  border-width: 6px 0;
+  border-image: url("./assets/ui/scrollbar-handle-vertical.png") 6 0 fill / 6px 0 stretch;
 }
-/* HorizontalScrollBarSlider: clip 12 26 12 12, borders t3 r6 b3 l5 */
 ::-webkit-scrollbar-thumb:horizontal {
-  min-width: 12px;
+  min-width: 14px;
   border-style: solid;
-  border-width: 3px 6px 3px 5px;
-  border-image: url("./assets/ui/sb-thumb-h.png") 3 6 3 5 fill / 3px 6px 3px 5px repeat;
+  border-width: 0 6px;
+  border-image: url("./assets/ui/scrollbar-handle-horizontal.png") 0 6 fill / 0 6px stretch;
 }
 ::-webkit-scrollbar-button:single-button:vertical:decrement {
   height: 12px;
-  background: url("./assets/ui/sb-up.png");
+  background: url("./assets/ui/scrollbar-buttonup-up.png");
 }
 ::-webkit-scrollbar-button:single-button:vertical:decrement:active {
-  background-image: url("./assets/ui/sb-up-pressed.png");
+  background-image: url("./assets/ui/scrollbar-buttonup-down.png");
 }
 ::-webkit-scrollbar-button:single-button:vertical:increment {
   height: 12px;
-  background: url("./assets/ui/sb-down.png");
+  background: url("./assets/ui/scrollbar-buttondown-up.png");
 }
 ::-webkit-scrollbar-button:single-button:vertical:increment:active {
-  background-image: url("./assets/ui/sb-down-pressed.png");
+  background-image: url("./assets/ui/scrollbar-buttondown-down.png");
 }
 ::-webkit-scrollbar-button:single-button:horizontal:decrement {
   width: 12px;
-  background: url("./assets/ui/sb-left.png");
+  background: url("./assets/ui/scrollbar-buttonleft-up.png");
 }
 ::-webkit-scrollbar-button:single-button:horizontal:decrement:active {
-  background-image: url("./assets/ui/sb-left-pressed.png");
+  background-image: url("./assets/ui/scrollbar-buttonleft-down.png");
 }
 ::-webkit-scrollbar-button:single-button:horizontal:increment {
   width: 12px;
-  background: url("./assets/ui/sb-right.png");
+  background: url("./assets/ui/scrollbar-buttonright-up.png");
 }
 ::-webkit-scrollbar-button:single-button:horizontal:increment:active {
-  background-image: url("./assets/ui/sb-right-pressed.png");
+  background-image: url("./assets/ui/scrollbar-buttonright-down.png");
 }
 /* WKWebView / WebKitGTK never draw scrollbar buttons, so the arrows are
    painted on the scrollbar itself and the track is shortened to make room;
    lib/ui/scrollbuttons.ts makes them clickable. */
 html.sb-fake-buttons ::-webkit-scrollbar:vertical {
   background:
-    url("./assets/ui/sb-up.png") top / 12px 12px no-repeat,
-    url("./assets/ui/sb-down.png") bottom / 12px 12px no-repeat;
+    url("./assets/ui/scrollbar-buttonup-up.png") top / 12px 12px no-repeat,
+    url("./assets/ui/scrollbar-buttondown-up.png") bottom / 12px 12px no-repeat;
 }
 html.sb-fake-buttons ::-webkit-scrollbar-track:vertical {
   margin: 12px 0;
 }
 html.sb-fake-buttons ::-webkit-scrollbar:horizontal {
   background:
-    url("./assets/ui/sb-left.png") left / 12px 12px no-repeat,
-    url("./assets/ui/sb-right.png") right / 12px 12px no-repeat;
+    url("./assets/ui/scrollbar-buttonleft-up.png") left / 12px 12px no-repeat,
+    url("./assets/ui/scrollbar-buttonright-up.png") right / 12px 12px no-repeat;
 }
 html.sb-fake-buttons ::-webkit-scrollbar-track:horizontal {
   margin: 0 12px;
@@ -564,9 +608,9 @@ kbd {
 }
 /* PopupMenuSeparator: horizontal_line_bright */
 .t-menu-sep {
-  height: 1px;
-  margin: 2px 3px 3px;
-  background: url("./assets/ui/line-bright.png") repeat-x;
+  height: 2px;
+  margin: 2px 3px;
+  background: url("./assets/ui/context-menu-separator.png") 0 0 / auto 2px repeat-x;
 }
 /* PopupMenuButton */
 .t-menu-entry {

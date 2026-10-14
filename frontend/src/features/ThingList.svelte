@@ -205,7 +205,7 @@
     <button class="t-icon-btn" title="New object" disabled={!app.open} onclick={commands.newThing}><Icon name="plus" /></button>
     <button class="t-icon-btn" title="Duplicate (Ctrl+D)" disabled={app.focused === null} onclick={commands.duplicate}><Icon name="copy" /></button>
     <button class="t-icon-btn" title="Replace with object (OBD)" disabled={app.selection.length !== 1} onclick={() => commands.importObd(true)}><Icon name="replace" /></button>
-    <button class="t-icon-btn" title="Remove (Del)" disabled={app.focused === null} onclick={commands.remove}><Icon name="trash" /></button>
+    <button class="t-icon-btn danger" title="Remove (Del)" disabled={app.focused === null} onclick={commands.remove}><Icon name="trash" /></button>
     <span class="grow"></span>
     <button class="t-icon-btn" title="Import OBD (Ctrl+I)" disabled={!app.open} onclick={() => commands.importObd()}><Icon name="import" /></button>
     <button class="t-icon-btn" title="Export OBD (Ctrl+E)" disabled={app.focused === null} onclick={() => commands.exportObd()}><Icon name="export" /></button>

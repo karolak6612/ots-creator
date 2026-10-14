@@ -21,6 +21,7 @@ import { clipboardThing, copyThing, pasteInto, type PasteMode } from "./clipboar
 import { ask } from "./confirm.svelte";
 import { prefs } from "./prefs.svelte";
 import { app, applyDraft, revertDraft, run, select, toast, versions } from "./state.svelte";
+import { map } from "./map/state.svelte";
 
 const OBJECTS = [
   { name: "Object files (*.otobj, *.obd)", pattern: "*.otobj;*.obd" },
@@ -190,7 +191,9 @@ export const commands = {
   /** Window close with unsaved work or a running export (the backend held
    * the close). */
   async quit() {
+    const maps = map.maps.filter((m) => m.changed).map((m) => m.name);
     const lost = [
+      maps.length && `unsaved maps (${maps.join(", ")})`,
       app.stoppable && "an export in progress",
       app.dirty && "unapplied object changes",
       app.project?.info.changed && "uncompiled client changes",

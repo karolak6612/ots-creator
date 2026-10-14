@@ -112,7 +112,7 @@
               <div class="npc t-panel">
                 <div class="row">
                   <input class="t-input grow" placeholder="NPC name" bind:value={n.name} spellcheck="false" />
-                  <button class="t-icon-btn" title="Remove this NPC" onclick={() => t.npcSales.splice(i, 1)}><Icon name="trash" /></button>
+                  <button class="t-icon-btn danger" title="Remove this NPC" onclick={() => t.npcSales.splice(i, 1)}><Icon name="trash" /></button>
                 </div>
                 <input class="t-input" placeholder="Location" bind:value={n.location} spellcheck="false" />
                 <div class="row wrap">
@@ -150,7 +150,7 @@
             {#if t.frameGroups.length === 1}
               <button class="t-btn" onclick={addWalkingGroup}>Add walking group</button>
             {:else}
-              <button class="t-btn" onclick={() => removeGroup(group)}>Remove {group === 0 ? "idle" : "walking"} group</button>
+              <button class="t-btn danger" onclick={() => removeGroup(group)}>Remove {group === 0 ? "idle" : "walking"} group</button>
             {/if}
           </div>
         {/if}

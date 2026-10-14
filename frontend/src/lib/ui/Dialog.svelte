@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import { backdrop, pop } from "./motion";
 
   let {
     title,
@@ -25,8 +26,8 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="overlay" onkeydown={onkeydown} onmousedown={(e) => e.target === e.currentTarget && onclose()}>
-  <div class="t-window dialog" style="width:{width}px" bind:this={box} role="dialog" aria-modal="true" aria-label={title}>
+<div class="overlay" transition:backdrop|global onkeydown={onkeydown} onmousedown={(e) => e.target === e.currentTarget && onclose()}>
+  <div class="t-window dialog" transition:pop|global style="width:{width}px" bind:this={box} role="dialog" aria-modal="true" aria-label={title}>
     <div class="t-window-title">{title}</div>
     <div class="content">
       {@render children()}
@@ -47,13 +48,11 @@
     align-items: center;
     justify-content: center;
     background: rgba(0, 0, 0, 0.45);
-    animation: fade 0.12s ease-out;
   }
   .dialog {
     max-height: calc(100vh - 40px);
     padding: 10px 12px 10px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
-    animation: pop 0.14s ease-out;
   }
   .content {
     overflow: auto;
@@ -63,16 +62,5 @@
     display: flex;
     justify-content: flex-end;
     gap: 6px;
-  }
-  @keyframes fade {
-    from {
-      opacity: 0;
-    }
-  }
-  @keyframes pop {
-    from {
-      transform: scale(0.97);
-      opacity: 0;
-    }
   }
 </style>

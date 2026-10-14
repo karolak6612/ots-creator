@@ -18,6 +18,7 @@ export class SpriteCache {
   private gen = 0;
   private entries = new Map<number, SpriteEntry>();
   private inflight = new Map<number, Promise<void>>();
+  private listeners = new Set<(ids: number[] | null) => void>();
 
   /** Drops the given sprites, or everything when ids is null. */
   invalidate(ids: number[] | null): void {
@@ -25,6 +26,13 @@ export class SpriteCache {
     this.inflight.clear();
     if (ids === null) this.entries.clear();
     else for (const id of ids) this.entries.delete(id);
+    for (const fn of this.listeners) fn(ids);
+  }
+
+  /** Calls fn with the dropped sprites (null: all) on every invalidation. */
+  onInvalidate(fn: (ids: number[] | null) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
   }
 
   get(id: number): SpriteEntry | undefined {

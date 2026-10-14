@@ -4,7 +4,7 @@
 
 # OTS Creator
 
-**Object editor for Open Tibia clients, from `Tibia.dat` / `Tibia.spr` to Tibia 12+ assets.**
+**Object and map editor for Open Tibia clients, from `Tibia.dat` / `Tibia.spr` to Tibia 12+ assets.**
 
 [![Latest release](https://img.shields.io/github/v/release/nekiro/ots-creator?style=flat-square&color=e8c46a)](https://github.com/nekiro/ots-creator/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/nekiro/ots-creator/total?style=flat-square&color=d4930a)](https://github.com/nekiro/ots-creator/releases)
@@ -87,6 +87,39 @@ and sprites with other users. Built with [Wails v3](https://v3.wails.io) (Go) an
 - Reorder objects within a client: drag them to other ids, or cut and click a slot. They
   swap places with the objects there, or are inserted and the objects between shift.
   Item ids stored in items (market, NPC currency) follow the moved items.
+
+**Map editor**
+
+Switch between **Objects** and **Map** at the top left. The map editor draws with the
+sprites of the open client, so objects changed in the object editor show on the map
+after **Reload from client**.
+
+- OTBM version 2 (what servers load), with houses, spawns (one spawn file, or
+  separate monster and NPC files), zones, towns and waypoints. OTBM files of versions 1
+  to 4 open and are saved as version 2.
+  Several maps can be open in tabs.
+- Item ids are detected automatically: server ids (translated with `items.otb`) or client
+  ids (used directly). Names and types come from `items.xml`.
+- Brushes for grounds with automatic borders, walls with doors and windows, doodads,
+  carpets, tables, houses, creatures and spawns, waypoints, zones, PZ / no-PvP / no-logout
+  flags, and an eraser. Brush size, square or circle shape, and Shift+drag to fill a
+  rectangle. Any item can also be placed as is.
+- Brushes are kept in the editor's own JSON format and can be edited in the app. The
+  brushes, tilesets and creatures of Remere's Map Editor are imported from its data
+  folder, and a doodad brush can be made from a selection.
+- Built around the work, not around windows: a **Library** of everything to draw with
+  (terrain, decoration, items, creatures, one search), a **World** outline of towns,
+  houses, waypoints and areas, and an inspector that shows whatever you click: a tile, a
+  house, a town, or the map with its statistics. Changes apply as you type.
+- **Ctrl+K** goes to anything: a position (pasted in any format), a town, house or
+  waypoint, a brush, an item, a creature or a command.
+- Selection over one or several floors with a floating bar of actions (copy, move between
+  floors, redo borders, find, make a brush), and an undo history you can jump back in.
+- Find panel that stays open while you work, with replace and remove of what it found;
+  map tools (unknown items, corpses, empty spawns, unseen tiles, borders) that work on the
+  selection or the whole map; import of another map at an offset, and minimap export.
+- Fast on big maps: the map is streamed in 32×32 chunks and drawn with WebGL in one draw
+  call, and far zoom levels use the minimap.
 
 **Market**
 

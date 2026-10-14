@@ -1,0 +1,137 @@
+// Keyboard shortcuts of the map editor. Every action has default keys; the
+// user can change them in the settings (map.keys holds only the changed
+// actions). Mouse gestures, Esc, the arrows and 1-9 are fixed.
+import { errorMessage } from "../api";
+import { toast } from "../state.svelte";
+import { mapCommands } from "./commands";
+import { comboOf } from "./keycombo";
+import { map, selectBrush } from "./state.svelte";
+
+export { comboOf };
+
+export type KeyGroup = "Drawing" | "Selection" | "View" | "Map";
+export const KEY_GROUPS: KeyGroup[] = ["Drawing", "Selection", "View", "Map"];
+
+export interface KeyAction {
+  id: string;
+  group: KeyGroup;
+  label: string;
+  keys: string[];
+  run: () => unknown;
+  /** Works without an open map and while typing in a field. */
+  always?: boolean;
+}
+
+const sel = () => ({ inSelection: !!map.active?.selection });
+
+export const KEY_ACTIONS: KeyAction[] = [
+  { id: "brush", group: "Drawing", label: "Brush tool", keys: ["B"], run: () => (map.tool = "brush") },
+  { id: "eraser", group: "Drawing", label: "Eraser", keys: ["E"], run: mapCommands.eraser },
+  { id: "fill", group: "Drawing", label: "Fill with the ground brush", keys: ["F"], run: () => (map.fill = !map.fill) },
+  { id: "sizeDown", group: "Drawing", label: "Smaller brush", keys: ["["], run: () => (map.size = Math.max(0, map.size - 1)) },
+  { id: "sizeUp", group: "Drawing", label: "Bigger brush", keys: ["]"], run: () => (map.size = Math.min(15, map.size + 1)) },
+  { id: "shape", group: "Drawing", label: "Square or round brush", keys: ["Q"], run: () => (map.shape = map.shape === "square" ? "circle" : "square") },
+
+  { id: "select", group: "Selection", label: "Selection tool", keys: ["S"], run: () => ((map.tool = "select"), (map.pasting = false)) },
+  { id: "copy", group: "Selection", label: "Copy", keys: ["Ctrl+C"], run: mapCommands.copy },
+  { id: "cut", group: "Selection", label: "Cut", keys: ["Ctrl+X"], run: mapCommands.cut },
+  { id: "paste", group: "Selection", label: "Paste", keys: ["Ctrl+V"], run: mapCommands.startPaste },
+  { id: "delete", group: "Selection", label: "Delete the selection", keys: ["Delete"], run: mapCommands.remove },
+  { id: "selectAll", group: "Selection", label: "Select the floor", keys: ["Ctrl+A"], run: mapCommands.selectAll },
+  { id: "borderize", group: "Selection", label: "Borderize the selection", keys: ["Ctrl+B"], run: () => mapCommands.tool("borderizeSelection") },
+
+  { id: "zoomIn", group: "View", label: "Zoom in", keys: ["+", "="], run: () => mapCommands.zoom(1) },
+  { id: "zoomOut", group: "View", label: "Zoom out", keys: ["-"], run: () => mapCommands.zoom(-1) },
+  { id: "zoomReset", group: "View", label: "Normal zoom", keys: ["Ctrl+0"], run: mapCommands.zoomReset },
+  { id: "floorUp", group: "View", label: "Floor up", keys: ["PageUp"], run: mapCommands.floorUp },
+  { id: "floorDown", group: "View", label: "Floor down", keys: ["PageDown"], run: mapCommands.floorDown },
+  { id: "grid", group: "View", label: "Grid", keys: ["G"], run: () => (map.view.grid = !map.view.grid) },
+  { id: "lowerFloors", group: "View", label: "Lower floors", keys: ["L"], run: () => (map.view.lowerFloors = !map.view.lowerFloors) },
+  { id: "ghostHigher", group: "View", label: "Ghost floor above", keys: ["H"], run: () => (map.view.ghostHigher = !map.view.ghostHigher) },
+
+  { id: "new", group: "Map", label: "New map", keys: ["Ctrl+N"], run: mapCommands.newMap, always: true },
+  { id: "open", group: "Map", label: "Open map", keys: ["Ctrl+O"], run: () => mapCommands.open(), always: true },
+  { id: "save", group: "Map", label: "Save", keys: ["Ctrl+S"], run: () => mapCommands.save(), always: true },
+  { id: "saveAs", group: "Map", label: "Save as", keys: ["Ctrl+Shift+S"], run: () => mapCommands.save(true), always: true },
+  { id: "close", group: "Map", label: "Close the map", keys: ["Ctrl+W"], run: () => mapCommands.close() },
+  { id: "undo", group: "Map", label: "Undo", keys: ["Ctrl+Z"], run: mapCommands.undo },
+  { id: "redo", group: "Map", label: "Redo", keys: ["Ctrl+Y", "Ctrl+Shift+Z"], run: mapCommands.redo },
+  { id: "palette", group: "Map", label: "Go to anything", keys: ["Ctrl+K", "Ctrl+P", "Ctrl+G"], run: () => mapCommands.commandPalette(), always: true },
+  { id: "find", group: "Map", label: "Find", keys: ["Ctrl+F"], run: () => mapCommands.find(sel()) },
+  { id: "replace", group: "Map", label: "Replace", keys: ["Ctrl+H"], run: () => mapCommands.find({ ...sel(), replace: true }) },
+  { id: "shortcuts", group: "Map", label: "Keyboard shortcuts", keys: ["F1"], run: () => (map.dialog = "shortcuts"), always: true },
+];
+
+/** Shortcuts that cannot be changed, listed next to the others. */
+export const FIXED_KEYS: { group: KeyGroup; keys: string; label: string }[] = [
+  { group: "Drawing", keys: "Click / drag", label: "Draw with the brush" },
+  { group: "Drawing", keys: "Ctrl + click", label: "Erase what the brush places" },
+  { group: "Drawing", keys: "Shift + drag", label: "Draw a rectangle" },
+  { group: "Drawing", keys: "Alt + ground brush", label: "Only replace the ground you started on" },
+  { group: "Drawing", keys: "Alt + wall click", label: "Change the wall shape" },
+  { group: "Drawing", keys: "Alt + door", label: "Place the door open" },
+  { group: "Drawing", keys: "Ctrl + Alt + click", label: "Use the item under the cursor as brush" },
+  { group: "Drawing", keys: "Alt + wheel", label: "Brush size" },
+  { group: "Drawing", keys: "Right click", label: "Drop the brush, back to selection (with selection: the tile menu)" },
+  { group: "Drawing", keys: "1 – 9", label: "Recent brushes" },
+  { group: "Selection", keys: "Drag", label: "Select a box (drag the selection to move it)" },
+  { group: "Selection", keys: "Ctrl + click", label: "Add or remove the top thing" },
+  { group: "Selection", keys: "Shift + drag", label: "Box selection; Ctrl adds, Alt removes" },
+  { group: "Selection", keys: "Click", label: "Select a tile and show it in the inspector" },
+  { group: "Selection", keys: "Esc", label: "Cancel paste, leave the brush, deselect, back to the map" },
+  { group: "View", keys: "Wheel", label: "Zoom at the cursor" },
+  { group: "View", keys: "Ctrl + wheel", label: "Floor up / down" },
+  { group: "View", keys: "Middle or right drag, Space + drag", label: "Move the view" },
+  { group: "View", keys: "Arrows (Shift: faster)", label: "Move the view" },
+];
+
+/** The keys of an action: the user's choice or the defaults. */
+export function keysOf(a: KeyAction, overrides: Record<string, string[]> = map.keys): string[] {
+  return overrides[a.id] ?? a.keys;
+}
+
+/** The first key of an action by id, for menus and tooltips. */
+export function keyLabel(id: string): string | undefined {
+  const a = KEY_ACTIONS.find((x) => x.id === id);
+  return a ? keysOf(a)[0] : undefined;
+}
+
+/** Handles a key press in the map editor. Returns true when handled. */
+export function mapShortcut(e: KeyboardEvent): boolean {
+  const combo = comboOf(e);
+  if (!combo) return false;
+  const typing = (e.target as HTMLElement).closest("input, textarea, select, [contenteditable]") !== null;
+  const ready = !typing && map.activeId !== null;
+  const run = (fn: () => unknown) => {
+    e.preventDefault();
+    Promise.resolve(fn()).catch((err) => toast(errorMessage(err), "error"));
+    return true;
+  };
+  for (const a of KEY_ACTIONS) {
+    if ((a.always || ready) && keysOf(a).includes(combo)) return run(a.run);
+  }
+  if (!ready || e.ctrlKey || e.metaKey) return false;
+  switch (e.key) {
+    case "Escape":
+      if (map.pick) return run(() => (map.pick = null));
+      if (map.pasting) return run(() => (map.pasting = false));
+      if (map.tool === "brush") return run(() => (map.tool = "select"));
+      if (map.active?.selection) return run(mapCommands.clearSelection);
+      if (map.findOpen) return run(() => ((map.findOpen = false), (map.results = null)));
+      if (map.focus) return run(() => mapCommands.inspect(null));
+      return false;
+    case "ArrowLeft":
+    case "ArrowRight":
+    case "ArrowUp":
+    case "ArrowDown": {
+      const step = e.shiftKey ? 10 : 2;
+      const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key]!;
+      return run(() => mapCommands.pan(d[0], d[1]));
+    }
+  }
+  if (/^[1-9]$/.test(e.key)) {
+    const b = map.recentBrushes[Number(e.key) - 1];
+    if (b) return run(() => selectBrush(b));
+  }
+  return false;
+}

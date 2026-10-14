@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Tibia client progress bar (progressbar.png frame, green fill) with a
+  // Tibia client progress bar (progressbar.png frame, the client's green bar) with a
   // centered label.
   let { percent, label = "", title = "" }: { percent: number; label?: string; title?: string } = $props();
 </script>
@@ -29,12 +29,13 @@
     image-rendering: pixelated;
     pointer-events: none;
   }
+  /* progressbar-green-small: the client's 12px green bar gradient. */
   .fill {
     position: absolute;
     left: 2px;
     top: 2px;
     bottom: 2px;
-    background: #3c9a3c;
+    background: url("../../assets/ui/progressbar-green-small.png") 0 0 / auto 100% repeat-x;
     transition: width 0.15s linear;
   }
   span {

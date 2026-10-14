@@ -19,7 +19,9 @@ type FilesDropped struct {
 
 // WindowService guards the main window against closing with unsaved work.
 type WindowService struct {
-	s         *Session
+	s *Session
+	// Maps reports unsaved maps.
+	Maps      *MapService
 	close     func()
 	unapplied atomic.Bool
 	force     atomic.Bool
@@ -56,6 +58,9 @@ func BlockClose(ws *WindowService) func() bool {
 
 func (ws *WindowService) unsaved() bool {
 	if ws.unapplied.Load() || ws.s.exporting.Load() > 0 {
+		return true
+	}
+	if ws.Maps != nil && ws.Maps.AnyChanged() {
 		return true
 	}
 	if st := ws.s.OtherState(); st.Open && st.Info.Changed {

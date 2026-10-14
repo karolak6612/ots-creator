@@ -1,0 +1,39 @@
+<script lang="ts">
+  // A map position: typed or pasted, picked with a click on the map, or
+  // visited.
+  import { fmtPos, parsePos, type Position } from "../../../lib/map/api";
+  import { goTo } from "../../../lib/map/commands";
+  import { pickPosition } from "../../../lib/map/world";
+  import Icon from "../../../lib/ui/Icon.svelte";
+
+  let { value, pickLabel, onchange }: { value: Position | null | undefined; pickLabel: string; onchange: (p: Position) => void } = $props();
+  const set = $derived(!!value && (value.x > 0 || value.y > 0));
+</script>
+
+<div class="pos">
+  <input
+    class="t-input grow"
+    value={set ? fmtPos(value) : ""}
+    placeholder="not set"
+    onchange={(e) => {
+      const p = parsePos(e.currentTarget.value);
+      if (p) onchange(p);
+    }}
+  />
+  <button class="t-icon-btn" title="Pick on the map" onclick={() => pickPosition(pickLabel, onchange)}><Icon name="picker" /></button>
+  <button class="t-icon-btn" title="Go there" disabled={!set} onclick={() => value && goTo(value)}><Icon name="arrowE" /></button>
+</div>
+
+<style>
+  .pos {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    gap: 2px;
+    align-items: center;
+  }
+  .grow {
+    flex: 1;
+    min-width: 0;
+  }
+</style>

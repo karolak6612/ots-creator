@@ -76,7 +76,7 @@
     <h4>Recent clients</h4>
     <div class="row">
       <span class="t-label grow">{recent ? `${recent} remembered` : "None yet"}</span>
-      <button class="t-btn" disabled={!recent} onclick={() => removeRecent(null)}>Clear list</button>
+      <button class="t-btn danger" disabled={!recent} onclick={() => removeRecent(null)}>Clear list</button>
     </div>
   </div>
   {#snippet footer()}

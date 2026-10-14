@@ -25,6 +25,8 @@ const maxBatch = 4096
 //	/res/thumb/{cat}/{id}        PNG of the list thumbnail
 //	/res/texture/{cat}/{id}?g=&l=&x=&y=&z=&f=   PNG of one texture
 //	/res/sheet/{cat}/{id}?g=&bg=transparent      PNG of a frame group sprite sheet
+//	/res/map/{map}/chunks?k=…                    map chunks (see MapService.serveMap)
+//	/res/map/{map}/minimap?x=&y=&z=&w=&h=        PNG minimap of an area
 //
 // The same paths under /res/b/ serve the second client of a comparison.
 //
@@ -32,6 +34,8 @@ const maxBatch = 4096
 // should include ?r={rev} so cached responses are invalidated on change.
 type Resources struct {
 	s *Session
+	// Maps serves /res/map/ (map chunks and minimaps).
+	Maps *MapService
 }
 
 // NewResources returns the handler.
@@ -50,6 +54,10 @@ func (h *Resources) Middleware(next http.Handler) http.Handler {
 
 func (h *Resources) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, ResourcePrefix), "/")
+	if len(parts) > 0 && parts[0] == "map" && h.Maps != nil {
+		h.Maps.serveMap(w, r, parts[1:])
+		return
+	}
 	project := h.s.Project
 	if len(parts) > 1 && parts[0] == "b" {
 		project, parts = h.s.Other, parts[1:]
@@ -198,6 +206,20 @@ func (h *Resources) texture(w http.ResponseWriter, r *http.Request, p *project.P
 		q := r.URL.Query()
 		num := func(k string) int { n, _ := strconv.Atoi(q.Get(k)); return max(n, 0) }
 		pos = project.TexturePos{Group: thing.FrameGroupType(num("g")), Layer: num("l"), PatternX: num("x"), PatternY: num("y"), PatternZ: num("z"), Frame: num("f")}
+		// wrap=1 takes x, y, z as a map position: the pattern the client
+		// draws there (grounds and borders vary by tile).
+		if q.Get("wrap") == "1" {
+			t, err := p.Thing(c, id)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			if g := t.Group(pos.Group); g != nil {
+				pos.PatternX %= max(int(g.PatternX), 1)
+				pos.PatternY %= max(int(g.PatternY), 1)
+				pos.PatternZ %= max(int(g.PatternZ), 1)
+			}
+		}
 	}
 	img, err := p.Render(c, id, pos)
 	if err != nil {

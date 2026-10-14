@@ -13,6 +13,8 @@ export interface Toast {
   text: string;
   /** Toasts with the same key replace each other instead of stacking. */
   key?: string;
+  /** A button on the toast, e.g. to show details. */
+  action?: { label: string; run: () => void };
 }
 
 export type DialogName =
@@ -144,9 +146,9 @@ export const otherVersions = new ResourceVersions(otherSpriteCache);
 let toastSeq = 0;
 const toastTimers = new Map<number, ReturnType<typeof setTimeout>>();
 /** Shows a toast. One with the key of a shown toast replaces it and keeps it up longer. */
-export function toast(text: string, kind: ToastKind = "info", ms = 3500, key?: string): void {
+export function toast(text: string, kind: ToastKind = "info", ms = 3500, key?: string, action?: Toast["action"]): void {
   const old = key ? app.toasts.find((x) => x.key === key) : undefined;
-  const t = old ? { ...old, kind, text } : { id: ++toastSeq, kind, text, key };
+  const t = old ? { ...old, kind, text, action } : { id: ++toastSeq, kind, text, key, action };
   app.toasts = old ? app.toasts.map((x) => (x.id === t.id ? t : x)) : [...app.toasts, t];
   clearTimeout(toastTimers.get(t.id));
   toastTimers.set(

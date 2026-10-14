@@ -88,7 +88,9 @@ export const res = {
   thumb: (c: Category, id: number, ver: string | number) => `/res/thumb/${CATEGORY_NAMES[c]}/${id}?v=${ver}`,
   /** Thumbnail of the second client of a comparison. */
   otherThumb: (c: Category, id: number, ver: string | number) => `/res/b/thumb/${CATEGORY_NAMES[c]}/${id}?v=${ver}`,
-  spritePng: (id: number, ver: string | number) => `/res/spritepng/${id}?v=${ver}`,
+  /** Full (uncropped) texture of a thing as the client draws it at map position x, y, z. */
+  textureAt: (c: Category, id: number, x: number, y: number, z: number, ver: string | number) => `/res/texture/${CATEGORY_NAMES[c]}/${id}?x=${x}&y=${y}&z=${z}&wrap=1&v=${ver}`,
+  spritePng:(id: number, ver: string | number) => `/res/spritepng/${id}?v=${ver}`,
   sheet: (c: Category, id: number, group: number, transparent: boolean, ver: string | number) =>
     `/res/sheet/${CATEGORY_NAMES[c]}/${id}?g=${group}&bg=${transparent ? "transparent" : "magenta"}&v=${ver}`,
   sprites: (ids: number[], rev: number) => `/res/sprites?ids=${ids.join(",")}&r=${rev}`,

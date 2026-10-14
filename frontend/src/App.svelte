@@ -35,8 +35,21 @@
   import ConfirmDialog from "./lib/ui/ConfirmDialog.svelte";
   import { WindowService, type FilesDropped } from "./lib/api";
   import Toasts from "./lib/ui/Toasts.svelte";
+  import MapEditor from "./features/map/MapEditor.svelte";
+  import { map } from "./lib/map/state.svelte";
+  import { mapShortcut } from "./lib/map/keys";
 
   let group = $state(0);
+  let mapHover = $state("");
+
+  // In the map editor only map shortcuts apply (Ctrl+S saves the map, not the client).
+  function onkeydown(e: KeyboardEvent) {
+    if (map.mode === "map") {
+      if (!app.dialog && !map.dialog) mapShortcut(e);
+      return;
+    }
+    handleShortcut(e);
+  }
 
   // Height of the sprite list; the splitter trades it with the preview.
   const SPRITES_KEY = "layout:sprites-height";
@@ -99,11 +112,14 @@
   $effect(() => setMinLayoutWidth(listWidth + 740));
 </script>
 
-<svelte:window onkeydown={handleShortcut} />
-<svelte:document onpaste={(e) => handlePaste(e, group)} />
+<svelte:window {onkeydown} />
+<svelte:document onpaste={(e) => map.mode === "objects" && handlePaste(e, group)} />
 
 <div class="shell" data-file-drop-target>
   <MenuBar />
+  {#if map.mode === "map"}
+    <MapEditor bind:hoverText={mapHover} />
+  {:else}
   <main style="--list-w:{listWidth}px">
     {#if app.open}
       <div class="left">
@@ -151,7 +167,8 @@
       </div>
     {/if}
   </main>
-  <StatusBar />
+  {/if}
+  <StatusBar {mapHover} />
 </div>
 
 {#if app.dialog === "open"}<OpenDialog />{/if}

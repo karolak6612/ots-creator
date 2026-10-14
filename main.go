@@ -4,6 +4,7 @@ import (
 	"embed"
 	"log"
 	"os"
+	"runtime/debug"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -24,9 +25,14 @@ func init() {
 	application.RegisterEvent[app.State](app.EventProjectChanged)
 	application.RegisterEvent[app.State](app.EventOtherChanged)
 	application.RegisterEvent[app.Progress](app.EventProgress)
+	application.RegisterEvent[app.Progress](app.EventMapProgress)
 }
 
 func main() {
+	// A big map is about a gigabyte of small objects that live as long as it
+	// is open. With the default GOGC the heap may grow to twice that before
+	// a collection; 50 keeps it at one and a half.
+	debug.SetGCPercent(50)
 	var wailsApp *application.App
 	emit := func(name string, data any) {
 		if wailsApp != nil {
@@ -37,6 +43,8 @@ func main() {
 	session := app.NewSession(emit)
 	prefs := openSettings()
 	resources := app.NewResources(session)
+	maps := app.NewMapService(session, app.OpenMapStore())
+	resources.Maps = maps
 	var selfUpdater app.Updater // set below for release builds
 	updates := app.NewUpdateService(version, func() app.Updater { return selfUpdater })
 	var mainWindow *application.WebviewWindow // set below
@@ -45,6 +53,7 @@ func main() {
 			mainWindow.Close()
 		}
 	})
+	windows.Maps = maps
 
 	wailsApp = application.New(application.Options{
 		Name:        "OTS Creator",
@@ -60,6 +69,7 @@ func main() {
 			application.NewService(windows),
 			application.NewService(app.NewSettingsService(prefs, session)),
 			application.NewService(app.NewMarketService(session, prefs)),
+			application.NewService(maps),
 		},
 		Assets: application.AssetOptions{
 			Handler:        application.AssetFileServerFS(assets),

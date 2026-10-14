@@ -153,7 +153,7 @@
     display: inline-block;
   }
   .box.on {
-    background-image: url("../assets/ui/check-on.png");
+    background-image: url("../assets/ui/checkbox-checked.png");
   }
   .box.keep {
     opacity: 0.4;

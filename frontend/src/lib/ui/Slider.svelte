@@ -89,41 +89,40 @@
     padding: 0;
     border: 0;
     flex: none;
-    background: url("../../assets/ui/sb-left.png");
+    background: url("../../assets/ui/slider-buttonleft-up.png");
     cursor: pointer;
   }
   .dec:active:not(:disabled) {
-    background-image: url("../../assets/ui/sb-left-pressed.png");
+    background-image: url("../../assets/ui/slider-buttonleft-down.png");
   }
   .inc {
-    background-image: url("../../assets/ui/sb-right.png");
+    background-image: url("../../assets/ui/slider-buttonright-up.png");
   }
   .inc:active:not(:disabled) {
-    background-image: url("../../assets/ui/sb-right-pressed.png");
+    background-image: url("../../assets/ui/slider-buttonright-down.png");
   }
   .dec:disabled,
   .inc:disabled {
     cursor: default;
   }
-  /* HorizontalScrollBar: scrollbar.png clip 0 38 24 12, image-border 1 */
+  /* slider-texture: 1px bevel top and bottom, tiled along. */
   .track {
     position: relative;
     flex: 1;
     border-style: solid;
-    border-width: 1px;
-    border-image: url("../../assets/ui/sb-track-h.png") 1 fill / 1px repeat;
+    border-width: 1px 0;
+    border-image: url("../../assets/ui/slider-texture.png") 1 0 fill / 1px 0 repeat;
     margin: 0;
     cursor: pointer;
   }
-  /* HorizontalScrollBarSlider: clip 12 26 12 12, borders 3 6 3 5 */
+  /* The horizontal scrollbar handle: 6px rounded ends, the middle stretches. */
   .thumb {
     position: absolute;
     top: -1px;
     height: 12px;
-    margin-left: -1px;
     border-style: solid;
-    border-width: 3px 6px 3px 5px;
-    border-image: url("../../assets/ui/sb-thumb-h.png") 3 6 3 5 fill / 3px 6px 3px 5px repeat;
+    border-width: 0 6px;
+    border-image: url("../../assets/ui/scrollbar-handle-horizontal.png") 0 6 fill / 0 6px stretch;
     box-sizing: border-box;
   }
   .disabled {

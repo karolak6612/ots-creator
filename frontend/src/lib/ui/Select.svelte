@@ -12,6 +12,8 @@
   // containers and dialogs never clip it.
   import { tick } from "svelte";
   import { toCss } from "../pixelscale";
+  import { portal } from "./portal";
+  import { reveal } from "./reveal";
 
   let {
     value,
@@ -55,8 +57,22 @@
     active = Math.max(selected, 0);
     open = true;
     await tick();
-    list?.querySelector<HTMLElement>(`[data-i="${active}"]`)?.scrollIntoView({ block: "nearest" });
+    fit();
+    scrollToItem(active);
   }
+
+  // A popup wider than the box grows to the left when it would stick out of
+  // the window (dialog or panel) the box is in, or out of the screen.
+  function fit() {
+    if (!list) return;
+    const w = list.offsetWidth;
+    const host = btn.closest(".t-window, .t-mini, [role=dialog]")?.getBoundingClientRect();
+    const right = Math.min(host ? toCss(host.right) : Infinity, toCss(window.innerWidth)) - 4;
+    const left = Math.max(host ? toCss(host.left) : 0, 0) + 4;
+    if (rect.left + w > right) rect.left = Math.max(left, right - w);
+  }
+
+  const scrollToItem = (i: number) => reveal(list, list?.querySelector<HTMLElement>(`[data-i="${i}"]`));
 
   function hide() {
     open = false;
@@ -78,7 +94,7 @@
       if (!options[i].disabled) break;
     }
     active = i;
-    list?.querySelector<HTMLElement>(`[data-i="${i}"]`)?.scrollIntoView({ block: "nearest" });
+    scrollToItem(i);
   }
 
   function onkeydown(e: KeyboardEvent) {
@@ -111,7 +127,7 @@
         if (options[i].label.toLowerCase().startsWith(ch) && !options[i].disabled) {
           if (open) {
             active = i;
-            list?.querySelector<HTMLElement>(`[data-i="${i}"]`)?.scrollIntoView({ block: "nearest" });
+            scrollToItem(i);
           } else if (options[i].value !== value) onchange(options[i].value);
           break;
         }
@@ -151,6 +167,7 @@
 {#if open}
   <div
     bind:this={list}
+    use:portal
     class="popup t-popup"
     role="listbox"
     style="left:{rect.left}px;top:{rect.top}px;min-width:{rect.width}px;max-height:{maxItems * ITEM_H + 4}px"

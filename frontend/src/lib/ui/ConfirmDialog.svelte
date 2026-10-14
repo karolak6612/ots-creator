@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { answer, confirmState } from "../confirm.svelte";
+  import { answer, confirmState, DESTRUCTIVE } from "../confirm.svelte";
   import Dialog from "./Dialog.svelte";
 
   const q = $derived(confirmState.question);
@@ -10,7 +10,7 @@
     <p>{q.message}</p>
     {#snippet footer()}
       <span class="grow"></span>
-      <button class="t-btn primary" onclick={() => answer(true)}>{q.ok}</button>
+      <button class="t-btn primary" class:danger={q.danger ?? DESTRUCTIVE.test(q.ok)} onclick={() => answer(true)}>{q.ok}</button>
       <button class="t-btn" onclick={() => answer(false)}>Cancel</button>
     {/snippet}
   </Dialog>

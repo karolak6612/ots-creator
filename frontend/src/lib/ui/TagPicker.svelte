@@ -7,6 +7,8 @@
   import { tick } from "svelte";
   import { matchTags, parseTags, type TagOption } from "../market";
   import { toCss } from "../pixelscale";
+  import { portal } from "./portal";
+  import { reveal } from "./reveal";
 
   let {
     value,
@@ -15,7 +17,10 @@
     max = 0,
     allowCustom = false,
     placeholder = "Search tags…",
+    plain = false,
   }: {
+    /** Names as typed (spaces and case kept) instead of market tags. */
+    plain?: boolean;
     value: string[];
     options: TagOption[];
     onchange: (tags: string[]) => void;
@@ -37,12 +42,18 @@
   let rect = $state({ left: 0, top: 0, width: 0 });
 
   const full = $derived(max > 0 && value.length >= max);
-  const matches = $derived(matchTags(options, query, value));
+  const matches = $derived.by(() => {
+    if (!plain) return matchTags(options, query, value);
+    const q = query.trim().toLowerCase();
+    const free = options.filter((o) => !value.includes(o.tag));
+    return q ? free.filter((o) => o.tag.toLowerCase().includes(q)) : free;
+  });
   // A typed tag that is not offered can be added as is.
   const custom = $derived.by(() => {
     if (!allowCustom) return "";
-    const t = parseTags(query)[0] ?? "";
-    return t && !value.includes(t) && !matches.some((m) => m.tag === t) ? t : "";
+    const t = plain ? query.trim() : (parseTags(query)[0] ?? "");
+    const same = (x: string) => (plain ? x.toLowerCase() === t.toLowerCase() : x === t);
+    return t && !value.some(same) && !matches.some((m) => same(m.tag)) ? t : "";
   });
   type Row = { tag: string; count?: number; header?: string; custom?: boolean };
   const rows = $derived.by((): Row[] => {
@@ -53,7 +64,7 @@
       group = m.group;
     }
     // Last, so Enter takes the best match; alone when nothing matches.
-    if (custom) out.push({ tag: custom, custom: true, header: matches.length ? "Your tag" : undefined });
+    if (custom) out.push({ tag: custom, custom: true, header: matches.length ? (plain ? "New" : "Your tag") : undefined });
     return out;
   });
 
@@ -91,7 +102,7 @@
   function move(delta: number) {
     if (!rows.length) return;
     active = Math.min(Math.max(active + delta, 0), rows.length - 1);
-    list?.querySelector<HTMLElement>(`[data-i="${active}"]`)?.scrollIntoView({ block: "nearest" });
+    reveal(list, list?.querySelector<HTMLElement>(`[data-i="${active}"]`));
   }
 
   function onkeydown(e: KeyboardEvent) {
@@ -138,7 +149,7 @@
 </div>
 
 {#if open && rows.length}
-  <div bind:this={list} class="popup t-popup" role="listbox" style="left:{rect.left}px;top:{rect.top}px;width:{rect.width}px;max-height:{MAX_ITEMS * ITEM_H + 4}px">
+  <div bind:this={list} use:portal class="popup t-popup" role="listbox" style="left:{rect.left}px;top:{rect.top}px;width:{rect.width}px;max-height:{MAX_ITEMS * ITEM_H + 4}px">
     {#each rows as r, i (r.custom ? "+" + r.tag : r.tag)}
       {#if r.header}<div class="header">{r.header}</div>{/if}
       <div

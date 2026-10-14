@@ -1,0 +1,121 @@
+<script lang="ts">
+  import { onMount } from "svelte";
+  import { res } from "../../lib/map/api";
+  import { goTo, spriteSize } from "../../lib/map/commands";
+  import { map, onMapChange } from "../../lib/map/state.svelte";
+  import MiniWindow from "../../lib/ui/MiniWindow.svelte";
+  import Icon from "../../lib/ui/Icon.svelte";
+
+  /** Tiles shown across the minimap. */
+  const SPANS = [64, 128, 256, 512];
+  let span = $state(256);
+  let rev = $state(0);
+  let box = $state<HTMLDivElement>();
+  let size = $state(200);
+
+  const center = $derived.by(() => {
+    const c = map.cam;
+    const S = spriteSize();
+    const a = c.floor <= 7 ? 7 - c.floor : 0;
+    return { x: Math.floor(c.x / S) + a, y: Math.floor(c.y / S) + a, z: c.floor };
+  });
+  // The image moves in steps so it is not fetched on every pixel of a pan.
+  const step = $derived(Math.max(8, span / 8));
+  const live = $derived({ x: Math.max(0, Math.round((center.x - span / 2) / step) * step), y: Math.max(0, Math.round((center.y - span / 2) / step) * step) });
+  // While dragging, the image stays still: if it followed the camera, the same pointer
+  // position would point at a new tile on every move and the camera would run away.
+  let held = $state<{ x: number; y: number } | null>(null);
+  const origin = $derived(held ?? live);
+  const src = $derived(map.activeId !== null ? res.minimap(map.activeId, origin.x, origin.y, center.z, span, span, rev) : "");
+
+  // The view rectangle of the map canvas.
+  const view = $derived.by(() => {
+    const c = map.cam;
+    const S = spriteSize();
+    const canvas = document.querySelector<HTMLCanvasElement>("canvas.map-gl");
+    const w = canvas ? canvas.clientWidth / c.zoom / S : 40;
+    const h = canvas ? canvas.clientHeight / c.zoom / S : 30;
+    return { x: center.x - w / 2 - origin.x, y: center.y - h / 2 - origin.y, w, h };
+  });
+
+  let timer = 0;
+  onMount(() =>
+    onMapChange((id) => {
+      if (id !== map.activeId) return;
+      clearTimeout(timer);
+      timer = window.setTimeout(() => rev++, 400);
+    }),
+  );
+
+  function at(e: PointerEvent) {
+    const r = box!.getBoundingClientRect();
+    let x = origin.x + Math.floor(((e.clientX - r.left) / r.width) * span);
+    let y = origin.y + Math.floor(((e.clientY - r.top) / r.height) * span);
+    // Stay where the map has tiles; outside it there is only black.
+    const info = map.active;
+    if (info?.hasBounds) {
+      const [x0, y0, x1, y1] = info.bounds;
+      x = Math.min(Math.max(x, x0), x1);
+      y = Math.min(Math.max(y, y0), y1);
+    }
+    goTo({ x: Math.max(0, Math.min(65535, x)), y: Math.max(0, Math.min(65535, y)), z: center.z });
+  }
+
+  function onpointerdown(e: PointerEvent) {
+    if (e.button !== 0) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    held = { ...live };
+    at(e);
+  }
+
+  function release() {
+    held = null;
+  }
+</script>
+
+<MiniWindow title="Minimap" class="minimap">
+  {#snippet actions()}
+    <button class="t-icon-btn" title="Zoom out" disabled={span >= SPANS[SPANS.length - 1]} onclick={() => (span = SPANS[Math.min(SPANS.length - 1, SPANS.indexOf(span) + 1)])}><Icon name="zoomout" /></button>
+    <button class="t-icon-btn" title="Zoom in" disabled={span <= SPANS[0]} onclick={() => (span = SPANS[Math.max(0, SPANS.indexOf(span) - 1)])}><Icon name="zoomin" /></button>
+  {/snippet}
+  <div class="wrap" bind:clientWidth={size}>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="box" bind:this={box} style="height:{size}px" onpointerdown={onpointerdown} onpointermove={(e) => held && e.buttons === 1 && at(e)} onpointerup={release} onpointercancel={release} onlostpointercapture={release}>
+      {#if src}<img class="pixel" {src} alt="" draggable="false" />{/if}
+      <div
+        class="view"
+        style="left:{(view.x / span) * 100}%;top:{(view.y / span) * 100}%;width:{(view.w / span) * 100}%;height:{(view.h / span) * 100}%"
+      ></div>
+    </div>
+  </div>
+  <div class="t-label foot">Floor {center.z} · {span}×{span} tiles</div>
+</MiniWindow>
+
+<style>
+  .wrap {
+    padding: 2px;
+  }
+  .box {
+    position: relative;
+    background: #000;
+    overflow: hidden;
+    cursor: crosshair;
+    border: 1px solid #111;
+  }
+  img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .view {
+    position: absolute;
+    border: 1px solid #fff;
+    box-shadow: 0 0 0 1px #000;
+    pointer-events: none;
+  }
+  .foot {
+    font: var(--fs-small) / 12px var(--font-small);
+    padding: 2px;
+  }
+</style>

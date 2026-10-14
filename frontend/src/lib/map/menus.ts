@@ -1,0 +1,186 @@
+// Menus of the map editor.
+import { app, toast } from "../state.svelte";
+import type { MenuEntry } from "../menu.svelte";
+import { MapService, fmtPos, type Position } from "./api";
+import { IF, TF, type TileData } from "./chunks";
+import { goTo, mapCommands } from "./commands";
+import { edit, map, selectBrush, warningCount } from "./state.svelte";
+import { addHouse, addTown, addWaypoint } from "./world";
+import { keyLabel } from "./keys";
+import type { ViewOptions } from "./renderer";
+
+const noMap = () => map.activeId === null;
+const noSel = () => !map.active?.selection;
+const noClient = () => !app.open;
+
+function copy(text: string) {
+  navigator.clipboard.writeText(text).then(
+    () => toast(`Copied ${text}`),
+    () => toast("Clipboard is not available.", "error"),
+  );
+}
+
+const toggle = (key: keyof ViewOptions, label: string, keys?: string): MenuEntry => ({
+  label,
+  keys,
+  checked: () => !!map.view[key],
+  action: () => (map.view[key] = !map.view[key]),
+});
+
+export function mapMenus(): { label: string; items: MenuEntry[] }[] {
+  const recent: MenuEntry[] = (map.recent ?? []).slice(0, 6).map((r) => ({
+    label: r.path.length > 60 ? "…" + r.path.slice(-58) : r.path,
+    action: () => mapCommands.open(r.path),
+  }));
+  const undo = map.active?.undoLabel;
+  const redo = map.active?.redoLabel;
+  return [
+    {
+      label: "File",
+      items: [
+        { label: "New map", keys: keyLabel("new"), action: mapCommands.newMap, disabled: noClient },
+        { label: "Open map…", keys: keyLabel("open"), action: () => mapCommands.open(), disabled: noClient },
+        ...(recent.length ? (["-", ...recent] as MenuEntry[]) : []),
+        "-",
+        { label: "Save", keys: keyLabel("save"), action: () => mapCommands.save(), disabled: noMap },
+        { label: "Save as…", keys: keyLabel("saveAs"), action: () => mapCommands.save(true), disabled: noMap },
+        "-",
+        { label: "Import a map into this one…", action: () => (map.dialog = "import"), disabled: noMap },
+        { label: "Export minimap images…", action: () => (map.dialog = "minimap"), disabled: noMap },
+        { label: "Save screenshot of the view…", action: mapCommands.exportImage, disabled: noMap },
+        "-",
+        { label: "Close map", keys: keyLabel("close"), action: () => mapCommands.close(), disabled: noMap },
+      ],
+    },
+    {
+      label: "Edit",
+      items: [
+        { label: undo ? `Undo ${undo.toLowerCase()}` : "Undo", keys: keyLabel("undo"), action: mapCommands.undo, disabled: () => !map.active?.canUndo },
+        { label: redo ? `Redo ${redo.toLowerCase()}` : "Redo", keys: keyLabel("redo"), action: mapCommands.redo, disabled: () => !map.active?.canRedo },
+        "-",
+        { label: "Cut", keys: keyLabel("cut"), action: mapCommands.cut, disabled: noSel },
+        { label: "Copy", keys: keyLabel("copy"), action: mapCommands.copy, disabled: noSel },
+        { label: "Paste", keys: keyLabel("paste"), action: mapCommands.startPaste, disabled: noMap },
+        { label: "Delete", keys: keyLabel("delete"), action: mapCommands.remove, disabled: noSel },
+        "-",
+        { label: "Select everything on this floor", keys: keyLabel("selectAll"), action: mapCommands.selectAll, disabled: noMap },
+        { label: "Deselect", keys: "Esc", action: mapCommands.clearSelection, disabled: noSel },
+        "-",
+        { label: "Find on the map…", keys: keyLabel("find"), action: () => mapCommands.find({ inSelection: !!map.active?.selection }), disabled: noMap },
+        { label: "Replace items…", keys: keyLabel("replace"), action: () => mapCommands.find({ inSelection: !!map.active?.selection, replace: true }), disabled: noMap },
+        { label: "Go to anything…", keys: keyLabel("palette"), action: () => mapCommands.commandPalette() },
+        "-",
+        { label: "Automatic borders and walls", checked: () => !!map.settings?.automagic, action: toggleAutomagic },
+      ],
+    },
+    {
+      label: "View",
+      items: [
+        { label: "Zoom in", keys: keyLabel("zoomIn"), action: () => mapCommands.zoom(1), disabled: noMap },
+        { label: "Zoom out", keys: keyLabel("zoomOut"), action: () => mapCommands.zoom(-1), disabled: noMap },
+        { label: "Normal zoom", keys: keyLabel("zoomReset"), action: mapCommands.zoomReset, disabled: noMap },
+        { label: "Floor up", keys: keyLabel("floorUp"), action: mapCommands.floorUp, disabled: noMap },
+        { label: "Floor down", keys: keyLabel("floorDown"), action: mapCommands.floorDown, disabled: noMap },
+        "-",
+        toggle("lowerFloors", "Show lower floors", keyLabel("lowerFloors")),
+        toggle("ghostHigher", "Show the floor above, faded", keyLabel("ghostHigher")),
+        toggle("shade", "Darken lower floors"),
+        toggle("grid", "Grid", keyLabel("grid")),
+        toggle("clientBox", "What a player sees"),
+        "-",
+        toggle("creatures", "Creatures"),
+        toggle("labels", "Names on the map"),
+        toggle("spawns", "Spawn areas"),
+        toggle("houses", "Houses"),
+        toggle("special", "Protection zones and other areas"),
+        toggle("zones", "Zones"),
+        toggle("markers", "Temples, house entrances and waypoints"),
+        "-",
+        toggle("animation", "Animations"),
+        toggle("pathing", "Highlight blocking tiles"),
+        toggle("highlightItems", "Highlight stacked items"),
+        toggle("ghostItems", "Fade loose items"),
+        toggle("tooltips", "Item ids and attributes"),
+        toggle("coords", "Tile coordinates"),
+        toggle("onlyModified", "Only changed tiles"),
+        toggle("asMinimap", "Minimap colors"),
+      ],
+    },
+    {
+      label: "Map",
+      items: [
+        { label: "Properties and statistics", action: () => ((map.side = "world"), mapCommands.focus({ kind: "map" })), disabled: noMap },
+        { label: "Map tools…", action: () => (map.dialog = "tools"), disabled: noMap },
+        {
+          label: `Load warnings… (${map.activeId !== null ? warningCount(map.loadWarnings[map.activeId]).toLocaleString() : 0})`,
+          action: () => (map.dialog = "warnings"),
+          disabled: () => map.activeId === null || !map.loadWarnings[map.activeId]?.length,
+        },
+        "-",
+        { label: "New town…", action: () => ((map.side = "world"), addTown()), disabled: noMap },
+        { label: "New house", action: () => ((map.side = "world"), addHouse()), disabled: noMap },
+        { label: "New waypoint…", action: () => ((map.side = "world"), addWaypoint()), disabled: noMap },
+        "-",
+        { label: "Items and brushes…", action: () => (map.dialog = "data"), disabled: noClient },
+      ],
+    },
+  ];
+}
+
+async function toggleAutomagic() {
+  const s = map.settings;
+  if (!s) return;
+  const next = { ...s, automagic: !s.automagic };
+  await MapService.SetEditorSettings(next);
+  map.settings = next;
+  toast(next.automagic ? "Automatic borders and walls are on." : "Automatic borders and walls are off.");
+}
+
+/** Context menu of a map tile. */
+export function mapContextMenu(p: Position, t: TileData | null, actions: { pick: () => void }): MenuEntry[] {
+  const items = map.items;
+  const top = t && t.ids.length ? t.ids[t.ids.length - 1] : 0;
+  const topIndex = t ? t.ids.length - 1 - (t.flags & TF.ground ? 1 : 0) : -1;
+  const out: MenuEntry[] = [
+    { label: `Inspect tile ${fmtPos(p)}`, action: () => mapCommands.inspect(p) },
+    { label: "Copy position", action: () => copy(fmtPos(p)) },
+  ];
+  if (top && items) {
+    out.push(
+      "-",
+      { label: `Use brush: ${items.name(top)}`, keys: "Ctrl+Alt+click", action: actions.pick },
+      { label: "Copy item id", action: () => copy(String(top)) },
+      { label: "Copy item name", action: () => copy(items.name(top)) },
+    );
+    if (topIndex >= 0) {
+      out.push(
+        { label: "Rotate item", action: () => edit((id) => MapService.RotateItem(id, { pos: p, index: topIndex, path: [] })) },
+        { label: "Open or close door", action: () => edit((id) => MapService.SwitchDoor(id, p, topIndex)) },
+      );
+    }
+    if (t && t.iflags[t.ids.length - 1] & IF.teleport) {
+      out.push({
+        label: "Go to teleport destination",
+        action: async () => {
+          const tile = await MapService.Tile(map.activeId!, p);
+          const it = tile.items?.[tile.items.length - 1];
+          if (it?.ext?.dest) goTo(it.ext.dest);
+        },
+      });
+    }
+  }
+  out.push(
+    "-",
+    { label: "Select tile", action: () => edit((id) => MapService.SelectTiles(id, [p], false)) },
+    { label: "Copy", keys: keyLabel("copy"), action: mapCommands.copy, disabled: noSel },
+    { label: "Cut", keys: keyLabel("cut"), action: mapCommands.cut, disabled: noSel },
+    { label: "Paste here", action: () => edit((id) => MapService.Paste(id, p)) },
+    { label: "Delete selection", keys: keyLabel("delete"), action: mapCommands.remove, disabled: noSel },
+  );
+  const house = t?.house;
+  if (house) {
+    const name = map.active?.houses?.find((h) => h?.id === house)?.name ?? `House ${house}`;
+    out.push("-", { label: `Show ${name}`, action: () => mapCommands.focus({ kind: "house", id: house }) }, { label: `Paint tiles of ${name}`, action: () => selectBrush({ kind: "house", house, label: name }) });
+  }
+  return out;
+}
