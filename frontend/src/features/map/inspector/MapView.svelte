@@ -2,7 +2,6 @@
   // The map itself: properties (saved as they change) and what is on it.
   import { errorMessage } from "../../../lib/api";
   import { MapService, SpawnFormat, type MapInfo, type Properties, type Statistics } from "../../../lib/map/api";
-  import { mapCommands } from "../../../lib/map/commands";
   import { edit, map } from "../../../lib/map/state.svelte";
   import Icon from "../../../lib/ui/Icon.svelte";
   import NumberField from "../../../lib/ui/NumberField.svelte";
@@ -43,8 +42,6 @@
     return () => clearTimeout(t);
   });
 
-  const floors = $derived(stats?.floors ?? []);
-  const maxFloor = $derived(Math.max(1, ...floors));
   const separate = $derived(p.spawnFormat === SpawnFormat.SpawnsSeparate);
   const rows = $derived(
     stats
@@ -98,14 +95,6 @@
     <div class="stats" class:stale={statsRev !== m.rev}>
       {#each rows as [k, v]}
         <span class="k">{k}</span><span class="v">{Number(v).toLocaleString()}</span>
-      {/each}
-    </div>
-    <div class="floors" title="Tiles per floor">
-      {#each floors as n, z}
-        <button class="fl" class:cur={z === map.floor} title="Floor {z}: {n.toLocaleString()} tiles" onclick={() => mapCommands.floor(z)}>
-          <span class="bar" style="height:{n ? Math.max(2, (n / maxFloor) * 28) : 0}px"></span>
-          <span class="z">{z}</span>
-        </button>
       {/each}
     </div>
   {:else}
@@ -164,42 +153,6 @@
   .v {
     text-align: right;
     color: var(--text-bright);
-  }
-  .floors {
-    display: grid;
-    grid-template-columns: repeat(16, 1fr);
-    gap: 1px;
-    align-items: end;
-    margin-top: 4px;
-  }
-  .fl {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 1px;
-    height: 44px;
-    background: none;
-    border: 0;
-    padding: 0;
-    cursor: pointer;
-  }
-  .bar {
-    width: 70%;
-    background: #6d6d6d;
-  }
-  .fl:hover .bar {
-    background: #9a9a9a;
-  }
-  .fl.cur .bar {
-    background: var(--gold);
-  }
-  .z {
-    font: var(--fs-small) / 10px var(--font-small);
-    color: var(--text-dim);
-  }
-  .fl.cur .z {
-    color: var(--gold);
   }
   .acts {
     display: flex;
