@@ -5,6 +5,7 @@
   import { map, onMapChange } from "../../lib/map/state.svelte";
   import MiniWindow from "../../lib/ui/MiniWindow.svelte";
   import Icon from "../../lib/ui/Icon.svelte";
+  import Splitter from "../../lib/ui/Splitter.svelte";
 
   /** Tiles shown across the minimap. */
   const SPANS = [64, 128, 256, 512];
@@ -12,6 +13,37 @@
   let rev = $state(0);
   let box = $state<HTMLDivElement>();
   let size = $state(200);
+
+  // Height chosen with the splitter below the image; square (null) until dragged.
+  const HEIGHT_KEY = "map:minimap-height";
+  const HEIGHT_MIN = 80;
+  let chosen = $state<number | null>(loadHeight());
+  const height = $derived(chosen ?? size);
+  /** Tiles shown down the minimap: the image keeps square tiles. */
+  const spanY = $derived(Math.max(8, Math.round((span * height) / Math.max(1, size))));
+
+  function loadHeight(): number | null {
+    try {
+      const v = Number(localStorage.getItem(HEIGHT_KEY));
+      if (v > 0) return v;
+    } catch {
+      /* storage unavailable */
+    }
+    return null;
+  }
+
+  function resize(dy: number) {
+    const max = Math.max(HEIGHT_MIN, window.innerHeight - 320);
+    chosen = Math.round(Math.max(HEIGHT_MIN, Math.min(max, height + dy)));
+  }
+
+  function saveHeight() {
+    try {
+      localStorage.setItem(HEIGHT_KEY, String(chosen ?? 0));
+    } catch {
+      /* ignore */
+    }
+  }
 
   const center = $derived.by(() => {
     const c = map.cam;
@@ -21,12 +53,12 @@
   });
   // The image moves in steps so it is not fetched on every pixel of a pan.
   const step = $derived(Math.max(8, span / 8));
-  const live = $derived({ x: Math.max(0, Math.round((center.x - span / 2) / step) * step), y: Math.max(0, Math.round((center.y - span / 2) / step) * step) });
+  const live = $derived({ x: Math.max(0, Math.round((center.x - span / 2) / step) * step), y: Math.max(0, Math.round((center.y - spanY / 2) / step) * step) });
   // While dragging, the image stays still: if it followed the camera, the same pointer
   // position would point at a new tile on every move and the camera would run away.
   let held = $state<{ x: number; y: number } | null>(null);
   const origin = $derived(held ?? live);
-  const src = $derived(map.activeId !== null ? res.minimap(map.activeId, origin.x, origin.y, center.z, span, span, rev) : "");
+  const src = $derived(map.activeId !== null ? res.minimap(map.activeId, origin.x, origin.y, center.z, span, spanY, rev) : "");
 
   // The view rectangle of the map canvas.
   const view = $derived.by(() => {
@@ -50,7 +82,7 @@
   function at(e: PointerEvent) {
     const r = box!.getBoundingClientRect();
     let x = origin.x + Math.floor(((e.clientX - r.left) / r.width) * span);
-    let y = origin.y + Math.floor(((e.clientY - r.top) / r.height) * span);
+    let y = origin.y + Math.floor(((e.clientY - r.top) / r.height) * spanY);
     // Stay where the map has tiles; outside it there is only black.
     const info = map.active;
     if (info?.hasBounds) {
@@ -80,15 +112,16 @@
   {/snippet}
   <div class="wrap" bind:clientWidth={size}>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="box" bind:this={box} style="height:{size}px" onpointerdown={onpointerdown} onpointermove={(e) => held && e.buttons === 1 && at(e)} onpointerup={release} onpointercancel={release} onlostpointercapture={release}>
+    <div class="box" bind:this={box} style="height:{height}px" onpointerdown={onpointerdown} onpointermove={(e) => held && e.buttons === 1 && at(e)} onpointerup={release} onpointercancel={release} onlostpointercapture={release}>
       {#if src}<img class="pixel" {src} alt="" draggable="false" />{/if}
       <div
         class="view"
-        style="left:{(view.x / span) * 100}%;top:{(view.y / span) * 100}%;width:{(view.w / span) * 100}%;height:{(view.h / span) * 100}%"
+        style="left:{(view.x / span) * 100}%;top:{(view.y / spanY) * 100}%;width:{(view.w / span) * 100}%;height:{(view.h / spanY) * 100}%"
       ></div>
     </div>
   </div>
-  <div class="t-label foot">Floor {center.z} · {span}×{span} tiles</div>
+  <Splitter ondrag={resize} onend={saveHeight} />
+  <div class="t-label foot">Floor {center.z} · {span}×{spanY} tiles</div>
 </MiniWindow>
 
 <style>

@@ -8,6 +8,7 @@
   import Icon from "../../lib/ui/Icon.svelte";
   import MiniWindow from "../../lib/ui/MiniWindow.svelte";
   import PromptDialog from "../../lib/ui/PromptDialog.svelte";
+  import Splitter from "../../lib/ui/Splitter.svelte";
   import CommandPalette from "./CommandPalette.svelte";
   import FindPanel from "./FindPanel.svelte";
   import Inspector from "./Inspector.svelte";
@@ -36,6 +37,39 @@
     void loadMapData();
   });
 
+  // Widths of the side panels; the splitters trade them with the map.
+  const SIDES_KEY = "map:sides";
+  // The panels' forms are laid out for these widths and break when narrower,
+  // so they are also the minimum: the splitters only widen the panels.
+  const SIDE_MIN = { left: 290, right: 270 };
+  const CENTER_MIN = 400;
+  let layout = $state<HTMLElement>();
+  let sides = $state(loadSides());
+
+  function loadSides(): { left: number; right: number } {
+    try {
+      const v = JSON.parse(localStorage.getItem(SIDES_KEY) ?? "{}");
+      return { left: Math.max(SIDE_MIN.left, Number(v.left) || 0), right: Math.max(SIDE_MIN.right, Number(v.right) || 0) };
+    } catch {
+      return { ...SIDE_MIN };
+    }
+  }
+
+  function resizeSide(side: "left" | "right", dx: number) {
+    const other = side === "left" ? (map.maps.length ? sides.right : 0) : sides.left;
+    const max = Math.max(SIDE_MIN[side], (layout?.clientWidth ?? 1600) - other - CENTER_MIN - 20);
+    const next = side === "left" ? sides[side] + dx : sides[side] - dx;
+    sides[side] = Math.round(Math.max(SIDE_MIN[side], Math.min(max, next)));
+  }
+
+  function saveSides() {
+    try {
+      localStorage.setItem(SIDES_KEY, JSON.stringify(sides));
+    } catch {
+      /* ignore */
+    }
+  }
+
   // Painting houses, zones or areas belongs to the world; show it there.
   $effect(() => {
     const k = map.brush?.kind;
@@ -43,7 +77,7 @@
   });
 </script>
 
-<main class="maplayout" class:nomap={app.open && !map.maps.length}>
+<main class="maplayout" class:nomap={app.open && !map.maps.length} bind:this={layout} style="--left-w:{sides.left}px;--right-w:{sides.right}px">
   {#if !app.open}
     <div class="welcome">
       <section class="t-window card">
@@ -68,6 +102,7 @@
         {#if map.side === "library"}<Library />{:else}<World />{/if}
       </MiniWindow>
     </div>
+    <Splitter vertical ondrag={(dx) => resizeSide("left", dx)} onend={saveSides} />
     <div class="center">
       <!-- With maps open the canvas goes edge to edge: the tabs name the map, no window frame. -->
       <section class="mapwin" class:t-window={!map.maps.length} class:open={map.maps.length > 0}>
@@ -125,6 +160,7 @@
       </section>
     </div>
     {#if map.maps.length}
+    <Splitter vertical ondrag={(dx) => resizeSide("right", dx)} onend={saveSides} />
     <div class="right">
       <Minimap />
       {#if map.findOpen}<FindPanel />{/if}
@@ -144,12 +180,12 @@
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: 290px minmax(400px, 1fr) 270px;
-    gap: 4px;
+    /* The splitter columns are the 6px gaps between the panels. */
+    grid-template-columns: var(--left-w) auto minmax(400px, 1fr) auto var(--right-w);
     padding: 4px;
   }
   .maplayout.nomap {
-    grid-template-columns: 290px minmax(400px, 1fr);
+    grid-template-columns: var(--left-w) auto minmax(400px, 1fr);
   }
   .left,
   .right,

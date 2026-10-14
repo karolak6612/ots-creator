@@ -84,6 +84,7 @@ export const mapCommands = {
       const p = ev.data;
       if (map.loading) map.loading = { name, step: p.label, percent: p.total > 0 ? (p.done / p.total) * 100 : 0 };
     });
+    const started = performance.now();
     try {
       const r = await MapService.OpenMap(path);
       off();
@@ -93,11 +94,13 @@ export const mapCommands = {
       await afterOpen(r.info.id);
       const w = (r.warnings ?? []).filter((x): x is string => !!x);
       map.loadWarnings = { ...map.loadWarnings, [r.info.id]: w };
+      // Whole open: reading the file, the item data and the first view.
+      const took = `${((performance.now() - started) / 1000).toFixed(1)} s`;
       if (w.length) {
         const show = () => ((map.activeId = r.info.id), (map.dialog = "warnings"));
         const n = warningCount(w);
-        toast(`Opened ${r.info.name} with ${n.toLocaleString()} warning${n > 1 ? "s" : ""}.`, "info", 12000, undefined, { label: "Show warnings", run: show });
-      } else toast(`Opened ${r.info.name}.`, "success");
+        toast(`Opened ${r.info.name} in ${took} with ${n.toLocaleString()} warning${n > 1 ? "s" : ""}.`, "info", 12000, undefined, { label: "Show warnings", run: show });
+      } else toast(`Opened ${r.info.name} in ${took}.`, "success");
     } catch (e) {
       toast(errorMessage(e), "error");
     } finally {
