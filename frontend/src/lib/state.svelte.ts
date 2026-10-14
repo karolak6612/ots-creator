@@ -145,11 +145,19 @@ export const otherVersions = new ResourceVersions(otherSpriteCache);
 
 let toastSeq = 0;
 const toastTimers = new Map<number, ReturnType<typeof setTimeout>>();
+/** Toasts shown at once; older ones make room for new ones. */
+const MAX_TOASTS = 4;
 /** Shows a toast. One with the key of a shown toast replaces it and keeps it up longer. */
 export function toast(text: string, kind: ToastKind = "info", ms = 3500, key?: string, action?: Toast["action"]): void {
   const old = key ? app.toasts.find((x) => x.key === key) : undefined;
   const t = old ? { ...old, kind, text, action } : { id: ++toastSeq, kind, text, key, action };
   app.toasts = old ? app.toasts.map((x) => (x.id === t.id ? t : x)) : [...app.toasts, t];
+  while (app.toasts.length > MAX_TOASTS) {
+    const gone = app.toasts[0];
+    clearTimeout(toastTimers.get(gone.id));
+    toastTimers.delete(gone.id);
+    app.toasts = app.toasts.slice(1);
+  }
   clearTimeout(toastTimers.get(t.id));
   toastTimers.set(
     t.id,

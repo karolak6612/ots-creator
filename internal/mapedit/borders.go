@@ -121,29 +121,29 @@ type borderCluster struct {
 	border *autoBorder
 }
 
-// borderize recomputes the ground borders of the tile at p.
-func (e *Editor) borderize(tx *Tx, p otmap.Position) {
-	cur := tx.Get(p)
-	if cur == nil {
-		// An empty tile can still get the outer border of a neighbor.
-		if !e.anyGroundBrushAround(p) {
-			return
-		}
-	}
-	t := tx.Edit(p)
-	self := e.groundBrushOf(t)
-	x, y, z := int(p.X), int(p.Y), int(p.Z)
+// borderPlan is the border stack automagic wants on a tile.
+type borderPlan struct {
+	ids []uint16 // bottom to top
+	// managed holds every piece of the border sets the plan used, so a new
+	// plan also replaces other pieces of the same sets.
+	managed      map[uint16]bool
+	dropOptional bool
+}
+
+// planBorders computes the borders of a tile of brush self at p, reading
+// the neighbors through ground. optional tells whether the tile carries an
+// optional (mountain) border.
+func (e *Editor) planBorders(p otmap.Position, self *GroundBrush, optional bool, ground func(otmap.Position) *GroundBrush) borderPlan {
+	plan := borderPlan{managed: map[uint16]bool{}}
 	type nb struct {
 		done  bool
 		brush *GroundBrush
 	}
 	var ns [8]nb
 	for i, d := range neighbors8 {
-		nx, ny := x+d[0], y+d[1]
-		if !inRange(nx, ny) {
-			continue
+		if q, ok := p.Add(d[0], d[1], 0); ok {
+			ns[i].brush = ground(q)
 		}
-		ns[i].brush = e.groundBrushOf(e.Map.At(nx, ny, z))
 	}
 	var clusters []borderCluster
 	var specific []*borderBlock
@@ -152,7 +152,6 @@ func (e *Editor) borderize(tx *Tx, p otmap.Position) {
 			specific = append(specific, bb)
 		}
 	}
-	optional := e.hasOptionalBorder(t)
 	for i := range ns {
 		if ns[i].done {
 			continue
@@ -253,21 +252,27 @@ func (e *Editor) borderize(tx *Tx, p otmap.Position) {
 			if other.optional != nil && optional {
 				clusters = append(clusters, borderCluster{mask, 1 << 30, other.optional})
 			} else {
-				t.State &^= otmap.StateOptionalBorder
+				plan.dropOptional = true
 			}
 		}
 		ns[i].done = true
 	}
 	sort.SliceStable(clusters, func(a, b int) bool { return clusters[a].z < clusters[b].z })
-	e.cleanBorders(t)
+	// Each piece goes to the bottom, so the lowest cluster ends lowest.
+	put := func(id uint16) { plan.ids = slices.Insert(plan.ids, 0, id) }
 	for i := len(clusters) - 1; i >= 0; i-- {
 		c := clusters[i]
 		if c.border == nil {
 			continue
 		}
+		for _, id := range c.border.tiles {
+			if id != 0 {
+				plan.managed[id] = true
+			}
+		}
 		for _, dir := range borderPieces(c.align) {
 			if id := c.border.tiles[dir]; id != 0 {
-				addBorderItem(t, id)
+				put(id)
 				continue
 			}
 			// A missing diagonal is made of its two sides.
@@ -284,76 +289,129 @@ func (e *Editor) borderize(tx *Tx, p otmap.Position) {
 			}
 			for _, side := range []int{a, b} {
 				if side != 0 && c.border.tiles[side] != 0 {
-					addBorderItem(t, c.border.tiles[side])
+					put(c.border.tiles[side])
 				}
 			}
 		}
 	}
 	for _, bb := range specific {
 		for _, sc := range bb.specific {
-			e.applySpecific(t, sc)
+			plan.ids = e.applySpecific(plan.ids, sc)
+			for _, id := range sc.match {
+				plan.managed[id] = true
+			}
+			for _, id := range []uint16{sc.replace, sc.with} {
+				if id != 0 {
+					plan.managed[id] = true
+				}
+			}
 		}
 	}
+	return plan
 }
 
-func (e *Editor) anyGroundBrushAround(p otmap.Position) bool {
-	x, y, z := int(p.X), int(p.Y), int(p.Z)
-	for _, d := range neighbors8 {
-		if g := e.groundBrushOf(e.Map.At(x+d[0], y+d[1], z)); g != nil && g.hasOuterZilchBorder() {
-			return true
-		}
-	}
-	return false
-}
-
-// applySpecific runs a specific case of a border rule on the border items
-// at the bottom of the stack.
-func (e *Editor) applySpecific(t *otmap.Tile, sc specificCase) {
+// applySpecific runs a specific case of a border rule on a border stack.
+func (e *Editor) applySpecific(ids []uint16, sc specificCase) []uint16 {
 	if len(sc.match) == 0 {
-		return
+		return ids
 	}
 	matches := 0
-	for _, it := range t.Items {
-		if !e.Brushes.isBorder(it.ID) {
-			break
-		}
+	for _, id := range ids {
 		if sc.matchGroup > 0 {
-			if in := e.Brushes.info[it.ID]; in != nil && in.borderGroup == sc.matchGroup && in.borderAlign == sc.groupAlign {
+			if in := e.Brushes.info[id]; in != nil && in.borderGroup == sc.matchGroup && in.borderAlign == sc.groupAlign {
 				matches++
 				continue
 			}
 		}
-		for _, id := range sc.match {
-			if it.ID == id {
+		for _, m := range sc.match {
+			if id == m {
 				matches++
 			}
 		}
 	}
 	if matches != len(sc.match) {
-		return
+		return ids
 	}
 	if sc.deleteAll {
-		out := t.Items[:0]
-		bottom := true
-		for _, it := range t.Items {
-			if bottom && !e.Brushes.isBorder(it.ID) {
-				bottom = false
-			}
-			if bottom && slices.Contains(sc.match, it.ID) {
-				continue
-			}
-			out = append(out, it)
-		}
-		t.Items = out
+		return slices.DeleteFunc(ids, func(id uint16) bool { return slices.Contains(sc.match, id) })
+	}
+	if i := slices.Index(ids, sc.replace); i >= 0 {
+		ids[i] = sc.with
+	}
+	return ids
+}
+
+// borderize redoes the borders of the tile at p after its neighborhood
+// changed. Unlike RME it does not wipe the tile: it compares the plans
+// from before and after the action and swaps only the pieces of the
+// border sets they use. Borders it does not know stay, and a tile whose
+// plan did not change is left alone.
+func (e *Editor) borderize(tx *Tx, p otmap.Position) { e.reborder(tx, p, false) }
+
+// reborder redoes the borders at p. full replaces every material border
+// on the tile; it is used by the borderize commands and when the ground
+// of the tile itself changed brush.
+func (e *Editor) reborder(tx *Tx, p otmap.Position, full bool) {
+	cur := tx.Get(p)
+	self := e.groundBrushOf(cur)
+	now := e.planBorders(p, self, cur != nil && e.hasOptionalBorder(cur), func(q otmap.Position) *GroundBrush {
+		return e.groundBrushOf(e.Map.Tile(q))
+	})
+	if cur == nil && len(now.ids) == 0 {
 		return
 	}
-	for i := range t.Items {
-		if !e.Brushes.isBorder(t.Items[i].ID) {
+	prior := tx.Prior(p)
+	var drop func(uint16) bool
+	if full || e.groundBrushOf(prior) != self {
+		drop = func(id uint16) bool {
+			in := e.Brushes.info[id]
+			return in != nil && in.border
+		}
+	} else {
+		old := e.planBorders(p, self, prior != nil && e.hasOptionalBorder(prior), func(q otmap.Position) *GroundBrush {
+			return e.groundBrushOf(tx.Prior(q))
+		})
+		if slices.Equal(old.ids, now.ids) && old.dropOptional == now.dropOptional {
 			return
 		}
-		if t.Items[i].ID == sc.replace {
-			t.Items[i].ID = sc.with
-			return
+		drop = func(id uint16) bool { return old.managed[id] || now.managed[id] || slices.Contains(old.ids, id) }
+	}
+	dropOptional := now.dropOptional && cur != nil && cur.State&otmap.StateOptionalBorder != 0
+	if cur != nil && !dropOptional && slices.EqualFunc(e.restack(cur.Items, now.ids, drop), cur.Items, func(a, b otmap.Item) bool { return a.ID == b.ID }) {
+		return
+	}
+	t := tx.Edit(p)
+	t.Items = e.restack(t.Items, now.ids, drop)
+	if dropOptional {
+		t.State &^= otmap.StateOptionalBorder
+	}
+}
+
+// restack returns items with the dropped border pieces at the bottom of
+// the stack replaced by ids. Kept borders go right above the new ones.
+// Pieces already there are reused, keeping their selection.
+func (e *Editor) restack(items []otmap.Item, ids []uint16, drop func(uint16) bool) []otmap.Item {
+	n := 0
+	for n < len(items) && e.Brushes.isBorder(items[n].ID) {
+		n++
+	}
+	var spare, kept []otmap.Item
+	for _, it := range items[:n] {
+		if drop(it.ID) {
+			spare = append(spare, it)
+		} else {
+			kept = append(kept, it)
 		}
 	}
+	out := make([]otmap.Item, 0, len(ids)+len(items))
+	for _, id := range ids {
+		it := otmap.Item{ID: id}
+		if i := slices.IndexFunc(spare, func(s otmap.Item) bool { return s.ID == id }); i >= 0 {
+			it = spare[i]
+			spare = slices.Delete(spare, i, i+1)
+		}
+		out = append(out, it)
+	}
+	out = append(out, kept...)
+	return append(out, items[n:]...)
 }

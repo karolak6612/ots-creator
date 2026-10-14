@@ -242,6 +242,15 @@ export const mapCommands = {
     selectBrush({ kind: "eraser", label: "Eraser" });
   },
 
+  async toggleAutomagic() {
+    const s = map.settings;
+    if (!s) return;
+    const next = { ...s, automagic: !s.automagic };
+    await MapService.SetEditorSettings(next);
+    map.settings = next;
+    toast(next.automagic ? "Automatic borders and walls are on." : "Automatic borders and walls are off.", "info", 2000, "automagic");
+  },
+
   inspect(p: Position | null) {
     map.inspect = p;
     map.focus = p ? { kind: "tile" } : null;

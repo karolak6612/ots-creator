@@ -403,7 +403,7 @@ func (e *Editor) BorderizeMap() int {
 	var ps []otmap.Position
 	e.Map.Each(func(p otmap.Position, _ *otmap.Tile) { ps = append(ps, p) })
 	for _, p := range ps {
-		e.borderize(tx, p)
+		e.reborder(tx, p, true)
 		e.wallize(tx, p)
 	}
 	return tx.Commit()

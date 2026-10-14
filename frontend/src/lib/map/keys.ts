@@ -20,6 +20,8 @@ export interface KeyAction {
   run: () => unknown;
   /** Works without an open map and while typing in a field. */
   always?: boolean;
+  /** Runs again while the key is held down. */
+  repeat?: boolean;
 }
 
 const sel = () => ({ inSelection: !!map.active?.selection });
@@ -28,9 +30,10 @@ export const KEY_ACTIONS: KeyAction[] = [
   { id: "brush", group: "Drawing", label: "Brush tool", keys: ["B"], run: () => (map.tool = "brush") },
   { id: "eraser", group: "Drawing", label: "Eraser", keys: ["E"], run: mapCommands.eraser },
   { id: "fill", group: "Drawing", label: "Fill with the ground brush", keys: ["F"], run: () => (map.fill = !map.fill) },
-  { id: "sizeDown", group: "Drawing", label: "Smaller brush", keys: ["["], run: () => (map.size = Math.max(0, map.size - 1)) },
-  { id: "sizeUp", group: "Drawing", label: "Bigger brush", keys: ["]"], run: () => (map.size = Math.min(15, map.size + 1)) },
+  { id: "sizeDown", group: "Drawing", label: "Smaller brush", keys: ["["], run: () => (map.size = Math.max(0, map.size - 1)), repeat: true },
+  { id: "sizeUp", group: "Drawing", label: "Bigger brush", keys: ["]"], run: () => (map.size = Math.min(15, map.size + 1)), repeat: true },
   { id: "shape", group: "Drawing", label: "Square or round brush", keys: ["Q"], run: () => (map.shape = map.shape === "square" ? "circle" : "square") },
+  { id: "automagic", group: "Drawing", label: "Automatic borders and walls", keys: ["A"], run: mapCommands.toggleAutomagic },
 
   { id: "select", group: "Selection", label: "Selection tool", keys: ["S"], run: () => ((map.tool = "select"), (map.pasting = false)) },
   { id: "copy", group: "Selection", label: "Copy", keys: ["Ctrl+C"], run: mapCommands.copy },
@@ -40,11 +43,11 @@ export const KEY_ACTIONS: KeyAction[] = [
   { id: "selectAll", group: "Selection", label: "Select the floor", keys: ["Ctrl+A"], run: mapCommands.selectAll },
   { id: "borderize", group: "Selection", label: "Borderize the selection", keys: ["Ctrl+B"], run: () => mapCommands.tool("borderizeSelection") },
 
-  { id: "zoomIn", group: "View", label: "Zoom in", keys: ["+", "="], run: () => mapCommands.zoom(1) },
-  { id: "zoomOut", group: "View", label: "Zoom out", keys: ["-"], run: () => mapCommands.zoom(-1) },
+  { id: "zoomIn", group: "View", label: "Zoom in", keys: ["+", "="], run: () => mapCommands.zoom(1), repeat: true },
+  { id: "zoomOut", group: "View", label: "Zoom out", keys: ["-"], run: () => mapCommands.zoom(-1), repeat: true },
   { id: "zoomReset", group: "View", label: "Normal zoom", keys: ["Ctrl+0"], run: mapCommands.zoomReset },
-  { id: "floorUp", group: "View", label: "Floor up", keys: ["PageUp"], run: mapCommands.floorUp },
-  { id: "floorDown", group: "View", label: "Floor down", keys: ["PageDown"], run: mapCommands.floorDown },
+  { id: "floorUp", group: "View", label: "Floor up", keys: ["PageUp"], run: mapCommands.floorUp, repeat: true },
+  { id: "floorDown", group: "View", label: "Floor down", keys: ["PageDown"], run: mapCommands.floorDown, repeat: true },
   { id: "grid", group: "View", label: "Grid", keys: ["G"], run: () => (map.view.grid = !map.view.grid) },
   { id: "lowerFloors", group: "View", label: "Lower floors", keys: ["L"], run: () => (map.view.lowerFloors = !map.view.lowerFloors) },
   { id: "ghostHigher", group: "View", label: "Ghost floor above", keys: ["H"], run: () => (map.view.ghostHigher = !map.view.ghostHigher) },
@@ -54,8 +57,8 @@ export const KEY_ACTIONS: KeyAction[] = [
   { id: "save", group: "Map", label: "Save", keys: ["Ctrl+S"], run: () => mapCommands.save(), always: true },
   { id: "saveAs", group: "Map", label: "Save as", keys: ["Ctrl+Shift+S"], run: () => mapCommands.save(true), always: true },
   { id: "close", group: "Map", label: "Close the map", keys: ["Ctrl+W"], run: () => mapCommands.close() },
-  { id: "undo", group: "Map", label: "Undo", keys: ["Ctrl+Z"], run: mapCommands.undo },
-  { id: "redo", group: "Map", label: "Redo", keys: ["Ctrl+Y", "Ctrl+Shift+Z"], run: mapCommands.redo },
+  { id: "undo", group: "Map", label: "Undo", keys: ["Ctrl+Z"], run: mapCommands.undo, repeat: true },
+  { id: "redo", group: "Map", label: "Redo", keys: ["Ctrl+Y", "Ctrl+Shift+Z"], run: mapCommands.redo, repeat: true },
   { id: "palette", group: "Map", label: "Go to anything", keys: ["Ctrl+K", "Ctrl+P", "Ctrl+G"], run: () => mapCommands.commandPalette(), always: true },
   { id: "find", group: "Map", label: "Find", keys: ["Ctrl+F"], run: () => mapCommands.find(sel()) },
   { id: "replace", group: "Map", label: "Replace", keys: ["Ctrl+H"], run: () => mapCommands.find({ ...sel(), replace: true }) },
@@ -108,7 +111,13 @@ export function mapShortcut(e: KeyboardEvent): boolean {
     return true;
   };
   for (const a of KEY_ACTIONS) {
-    if ((a.always || ready) && keysOf(a).includes(combo)) return run(a.run);
+    if ((a.always || ready) && keysOf(a).includes(combo)) {
+      if (e.repeat && !a.repeat) {
+        e.preventDefault();
+        return true;
+      }
+      return run(a.run);
+    }
   }
   if (!ready || e.ctrlKey || e.metaKey) return false;
   switch (e.key) {

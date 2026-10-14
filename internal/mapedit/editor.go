@@ -261,6 +261,14 @@ func (e *Editor) BeginSelection() *Tx {
 // Get returns the current tile (read-only).
 func (t *Tx) Get(p otmap.Position) *otmap.Tile { return t.e.Map.Tile(p) }
 
+// Prior returns the tile at p as it was before this action (read-only).
+func (t *Tx) Prior(p otmap.Position) *otmap.Tile {
+	if b, seen := t.before[p]; seen {
+		return b
+	}
+	return t.e.Map.Tile(p)
+}
+
 // Edit returns a writable copy of the tile at p, creating an empty tile.
 // The copy is stored in the map right away so neighbors see it.
 func (t *Tx) Edit(p otmap.Position) *otmap.Tile {

@@ -29,6 +29,7 @@ const (
 	stoneID               = 700
 	bagID                 = 800
 	coinID                = 801
+	foreignBorder         = 900 // a border item no material knows
 )
 
 func testEditor(t *testing.T) *Editor {
@@ -49,6 +50,7 @@ func testEditor(t *testing.T) *Editor {
 	for _, id := range []uint16{rugC, rugN, tableAloneID, tableH, tableWestID, tableEID, treeID} {
 		add(id, otitems.FlagUnpassable, 0)
 	}
+	add(foreignBorder, 0, 1)
 	add(stoneID, otitems.FlagMoveable|otitems.FlagPickupable, 0)
 	add(bagID, otitems.FlagContainer|otitems.FlagMoveable, 0)
 	add(coinID, otitems.FlagStackable|otitems.FlagMoveable, 0)
@@ -164,6 +166,37 @@ func TestGroundBrushBorders(t *testing.T) {
 		if got := itemIDs(e.Map.Tile(at(xy[0], xy[1]))); len(got) != 0 {
 			t.Errorf("border left at %v: %v", xy, got)
 		}
+	}
+}
+
+func TestBorderizeKeepsHandPlacedBorders(t *testing.T) {
+	e := testEditor(t)
+	e.Draw(DrawRequest{Kind: KindGround, Name: "sand", Points: []otmap.Position{at(50, 50)}, Size: 3})
+	e.Draw(DrawRequest{Kind: KindRaw, Item: borderN, Points: []otmap.Position{at(51, 50)}})
+	e.Draw(DrawRequest{Kind: KindRaw, Item: foreignBorder, Points: []otmap.Position{at(50, 49)}})
+	// Repainting sand changes no plan: the hand-placed piece stays.
+	e.Draw(DrawRequest{Kind: KindGround, Name: "sand", Points: []otmap.Position{at(50, 50)}})
+	if got := itemIDs(e.Map.Tile(at(51, 50))); !slices.Equal(got, []uint16{borderN}) {
+		t.Fatalf("hand-placed border: %v", got)
+	}
+	// Grass next to it: automagic adds its piece and keeps the unknown one.
+	e.Draw(DrawRequest{Kind: KindGround, Name: "grass", Points: []otmap.Position{at(50, 50)}})
+	if got := itemIDs(e.Map.Tile(at(50, 49))); !slices.Equal(got, []uint16{borderS, foreignBorder}) {
+		t.Fatalf("north of grass: %v", got)
+	}
+	// Erasing the grass takes back only its own piece.
+	e.Draw(DrawRequest{Kind: KindGround, Name: "grass", Points: []otmap.Position{at(50, 50)}, Erase: true})
+	if got := itemIDs(e.Map.Tile(at(50, 49))); !slices.Equal(got, []uint16{foreignBorder}) {
+		t.Fatalf("after erase: %v", got)
+	}
+	// Borderize selection redoes material borders and keeps unknown ones.
+	e.SelectRect(Rect{From: at(47, 47), To: at(53, 53)}, FloorsCurrent, false, false, true)
+	e.BorderizeSelection()
+	if got := itemIDs(e.Map.Tile(at(51, 50))); len(got) != 0 {
+		t.Fatalf("borderize kept a stray piece: %v", got)
+	}
+	if got := itemIDs(e.Map.Tile(at(50, 49))); !slices.Equal(got, []uint16{foreignBorder}) {
+		t.Fatalf("borderize dropped an unknown border: %v", got)
 	}
 }
 
@@ -376,6 +409,24 @@ func TestSelectionMoveCopyPaste(t *testing.T) {
 	tl := e.Map.Tile(at(80, 70))
 	if tl.Ground.Selected || !tl.Items[0].Selected || e.SelectionCount() != 1 {
 		t.Fatal("click selection wrong")
+	}
+}
+
+func TestMoveItemKeepsBorders(t *testing.T) {
+	e := testEditor(t)
+	e.Draw(DrawRequest{Kind: KindGround, Name: "sand", Points: []otmap.Position{at(70, 70)}, Size: 2})
+	// A hand-placed border the brushes would not make.
+	e.Draw(DrawRequest{Kind: KindRaw, Item: borderN, Points: []otmap.Position{at(70, 69)}})
+	e.Draw(DrawRequest{Kind: KindRaw, Item: stoneID, Points: []otmap.Position{at(70, 70)}})
+	e.SelectAt(at(70, 70), false, true, true)
+	if err := e.MoveSelection(1, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := itemIDs(e.Map.Tile(at(71, 70))); !slices.Equal(got, []uint16{stoneID}) {
+		t.Fatalf("moved items %v", got)
+	}
+	if got := itemIDs(e.Map.Tile(at(70, 69))); !slices.Equal(got, []uint16{borderN}) {
+		t.Fatalf("border next to moved item: %v", got)
 	}
 }
 

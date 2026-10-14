@@ -70,7 +70,7 @@ export function mapMenus(): { label: string; items: MenuEntry[] }[] {
         { label: "Replace items…", keys: keyLabel("replace"), action: () => mapCommands.find({ inSelection: !!map.active?.selection, replace: true }), disabled: noMap },
         { label: "Go to anything…", keys: keyLabel("palette"), action: () => mapCommands.commandPalette() },
         "-",
-        { label: "Automatic borders and walls", checked: () => !!map.settings?.automagic, action: toggleAutomagic },
+        { label: "Automatic borders and walls", keys: keyLabel("automagic"), checked: () => !!map.settings?.automagic, action: mapCommands.toggleAutomagic },
       ],
     },
     {
@@ -125,15 +125,6 @@ export function mapMenus(): { label: string; items: MenuEntry[] }[] {
       ],
     },
   ];
-}
-
-async function toggleAutomagic() {
-  const s = map.settings;
-  if (!s) return;
-  const next = { ...s, automagic: !s.automagic };
-  await MapService.SetEditorSettings(next);
-  map.settings = next;
-  toast(next.automagic ? "Automatic borders and walls are on." : "Automatic borders and walls are off.");
 }
 
 /** Context menu of a map tile. */

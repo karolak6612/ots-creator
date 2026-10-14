@@ -21,6 +21,8 @@ type node struct {
 }
 
 func parseXML(data []byte) (*node, error) {
+	// RME's parser accepts NUL bytes (some data files end with one).
+	data = bytes.ReplaceAll(data, []byte{0}, nil)
 	dec := xml.NewDecoder(bytes.NewReader(data))
 	dec.Strict = false
 	dec.CharsetReader = func(_ string, r io.Reader) (io.Reader, error) { return r, nil }
@@ -49,6 +51,10 @@ func parseXML(data []byte) (*node, error) {
 		case xml.EndElement:
 			if len(stack) > 0 {
 				stack = stack[:len(stack)-1]
+			}
+			if len(stack) == 0 && root != nil {
+				// Whatever follows the root element is ignored, like RME does.
+				return root, nil
 			}
 		}
 	}

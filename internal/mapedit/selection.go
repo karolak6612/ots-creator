@@ -407,11 +407,28 @@ func (e *Editor) Paste(c *Clip, at otmap.Position) error {
 			continue
 		}
 		e.put(tx.Edit(p), ct, true)
-		changed.add(p)
+		if e.reshapes(ct) {
+			changed.add(p)
+		}
 	}
 	e.autoAround(tx, changed)
 	tx.Commit()
 	return nil
+}
+
+// reshapes reports whether placing or removing c changes the borders,
+// walls, tables or carpets around it. Other items leave them alone, so
+// moving a barrel does not redo hand-placed borders.
+func (e *Editor) reshapes(c ClipTile) bool {
+	if c.Ground != nil {
+		return true
+	}
+	for _, it := range c.Items {
+		if in := e.Brushes.info[it.ID]; in != nil && (in.wall != nil || in.table != nil || in.carpet != nil) {
+			return true
+		}
+	}
+	return false
 }
 
 // autoAround redoes borders and walls around changed tiles.
@@ -438,8 +455,9 @@ func (e *Editor) DeleteSelection(label string) int {
 	tx := e.Begin(label, 0)
 	changed := newPosSet()
 	for _, p := range e.Selected() {
-		extract(tx.Edit(p), true)
-		changed.add(p)
+		if e.reshapes(extract(tx.Edit(p), true)) {
+			changed.add(p)
+		}
 	}
 	e.autoAround(tx, changed)
 	return tx.Commit()
@@ -472,11 +490,15 @@ func (e *Editor) MoveSelection(dx, dy, dz int) error {
 		}
 		to, _ := p.Add(dx, dy, dz)
 		parts = append(parts, moved{to, c})
-		changed.add(p)
+		if e.reshapes(c) {
+			changed.add(p)
+		}
 	}
 	for _, m := range parts {
 		e.put(tx.Edit(m.to), m.c, true)
-		changed.add(m.to)
+		if e.reshapes(m.c) {
+			changed.add(m.to)
+		}
 	}
 	e.autoAround(tx, changed)
 	tx.Commit()
@@ -487,7 +509,7 @@ func (e *Editor) MoveSelection(dx, dy, dz int) error {
 func (e *Editor) BorderizeSelection() int {
 	tx := e.Begin("Borderize selection", 0)
 	for _, p := range e.Selected() {
-		e.borderize(tx, p)
+		e.reborder(tx, p, true)
 		e.wallize(tx, p)
 	}
 	return tx.Commit()

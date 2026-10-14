@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { MapService } from "../../lib/map/api";
   import { mapCommands } from "../../lib/map/commands";
   import { creatureOutfit, map, selectBrush, type BrushSel } from "../../lib/map/state.svelte";
   import Icon from "../../lib/ui/Icon.svelte";
@@ -36,14 +35,6 @@
   $effect(() => {
     map.thickness = density / 100;
   });
-
-  async function toggleAutomagic() {
-    const s = map.settings;
-    if (!s) return;
-    const next = { ...s, automagic: !s.automagic };
-    await MapService.SetEditorSettings(next);
-    map.settings = next;
-  }
 
   const QUICK: { key: keyof typeof map.view; icon: string; title: string }[] = [
     { key: "grid", icon: "grid", title: "Grid (G)" },
@@ -141,7 +132,7 @@
     {#each QUICK as q}
       <button class="t-icon-btn" class:on={map.view[q.key]} title={q.title} onclick={() => (map.view[q.key] = !map.view[q.key])}><Icon name={q.icon} /></button>
     {/each}
-    <button class="t-btn sm" class:on={!!map.settings?.automagic} title="Automatic borders and walls" onclick={toggleAutomagic}>Auto</button>
+    <button class="t-btn sm" class:on={!!map.settings?.automagic} title="Automatic borders and walls (A)" onclick={mapCommands.toggleAutomagic}>Auto</button>
   </div>
 
 </div>
